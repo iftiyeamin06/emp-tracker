@@ -6,7 +6,7 @@ Done:
 - Repo scaffolded with client/ + server/ + docs/
 - Express + TypeScript API on :5000, `/api/health` queries real DB
 - PostgreSQL 16.15 (portable, in .local/, gitignored)
-  - DB: time_tracker, user: tracker_user
+  - DB: emp_tracker (single DB; `npm run migrate` self-bootstraps it)
   - Schema applied via `npm run migrate` (tracked in schema_migrations)
 - React + Vite frontend on :5173
 - `start.bat` orchestrates Postgres → migrate → API → UI
@@ -20,7 +20,7 @@ Verified:
 
 To restart after reboot:
 - Double-click `start.bat` from File Explorer (interactive desktop required)
-- Or: `.local\pgbin\bin\pg_ctl.exe -D .local\pgdata -l .local\pglog.txt start`
+- Or: `.local\pgbin\bin\pg_ctl.exe -D .local\pgdata -l .local\pg.log start`
 
 ## Day 2 — Auth (NEXT)
 - Seed admin@example.com + owner@example.com (argon2)

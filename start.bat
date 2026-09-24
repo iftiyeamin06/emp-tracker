@@ -13,20 +13,18 @@ if not exist "%PG%\postgres.exe" (
 )
 
 "%PG%\pg_ctl.exe" -D "%PGDATA%" status >nul 2>&1
-if errorlevel 1 (
-  echo [db] starting Postgres...
-  "%PG%\pg_ctl.exe" -D "%PGDATA%" -l "%ROOT%.local\pg.log" -o "-p 5432" start
-  set TRIES=0
-  :waitpg
-  "%PG%\pg_ctl.exe" -D "%PGDATA%" status >nul 2>&1
-  if not errorlevel 1 goto pgready
-  set /a TRIES+=1
-  if %TRIES% GEQ 15 ( echo [db] Postgres did not start -- see .local\pg.log & pause & exit /b 1 )
-  timeout /t 1 /nobreak >nul
-  goto waitpg
-)
-:pgready
+if not errorlevel 1 goto pgready
 
+echo [db] starting Postgres...
+"%PG%\pg_ctl.exe" -D "%PGDATA%" -l "%ROOT%.local\pg.log" -o "-p 5432" start
+call :waitpg
+if errorlevel 1 (
+  echo [db] Postgres did not start -- see .local\pg.log
+  pause
+  exit /b 1
+)
+
+:pgready
 if not exist "%ROOT%server\node_modules\" (
   echo [setup] installing server deps...
   pushd "%ROOT%server" && call npm install --no-audit --no-fund && popd
@@ -56,4 +54,19 @@ if not exist "%ROOT%client\node_modules\" (
 start "Employee Tracker - API" cmd /k "cd /d %ROOT%server && npm run dev"
 start "Employee Tracker - UI" cmd /k "cd /d %ROOT%client && npm run dev"
 
-echo All running. Open http://localhost:5173 in your browser.
+echo Waiting for the UI, then opening the browser...
+timeout /t 6 /nobreak >nul
+start "" http://localhost:5173
+echo All running at http://localhost:5173
+pause
+exit /b 0
+
+:waitpg
+set TRIES=0
+:waitpg_loop
+"%PG%\pg_ctl.exe" -D "%PGDATA%" status >nul 2>&1
+if not errorlevel 1 exit /b 0
+set /a TRIES+=1
+if %TRIES% GEQ 15 exit /b 1
+timeout /t 1 /nobreak >nul
+goto waitpg_loop
