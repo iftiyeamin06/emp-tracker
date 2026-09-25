@@ -1,6 +1,6 @@
 # Employee Time & Activity Tracking Platform: Spec v4
 
-Company size: 20–30 employees · Stack: PostgreSQL, Node.js/Express, web UI
+Company size: 20–30 employees · Stack: MySQL 8, Node.js/Express, web UI
 Status: Revised draft v4: adds daily timecard, dated sick/vacation/holiday tracking, holiday credits and CEO summary report (on top of NYC compliance and cash-paid employees)
 Location: 40-05 21st St, Long Island City, NY 11101 (New York State and New York City rules apply)
 
@@ -156,24 +156,26 @@ Thresholds are configurable by Owner.
    - Sign-off: period status, approved by and when.
    - A one-page weekly version is the default for the Monday review. The single-employee version shows the full day-by-day history for dispute resolution.
 
-## 7. Database schema (PostgreSQL)
+## 7. Database schema (MySQL 8)
 
-See `server/src/db/migrations/001_init.sql` — canonical DDL for this spec (tables, views, triggers, seed wage_rules).
+See `server/src/db/migrations/001_init.sql` — canonical DDL for this spec (tables, views, seeds; no stored routines in V1).
 
 Key objects:
 
-- users, employees, pay_periods, timecard_entries, timecard_days, holidays, holiday_substitutions, holiday_credits
-- leave_policies, leave_ledger, leave_balances view
-- timecard_calculated view (Reg/OT single source of truth), refresh_entry_totals() trigger
-- audit_log (append-only), attachments, export_log, wage_rules, cash_payments, settings
-- enforce_period_open() lock trigger (block entry edits unless period is open)
+- users (logins, 2FA-ready), employees (identity + employment dates only)
+- employee_compensation (effective-dated pay classification — the only place rates/exemption live)
+- wage_rules (dated legal parameters + seeds), pay_periods (OPEN/SUBMITTED/RETURNED/APPROVED)
+- timecard_entries (weekly header, non-derived fields only), timecard_days (sole source of truth for time)
+- timecard_weekly view (ALL derived totals: worked/leave buckets, reg/OT — single definition)
+- holidays (calendar only; credits are Phase 2), leave_types (extensible) + leave_policies + leave_ledger, leave_balances view
+- audit_log (append-only event log), attachments (opaque storage keys), cash_payments (control log), export_log, settings, sessions
 
 Implementation notes:
 
-- Audit rows for timecard_entries, employees, pay_periods, leave_ledger and users are written by a shared trigger or by the API layer inside the same transaction as the change. Status changes and reopens carry a reason.
-- Set the session user ID per request (e.g. SET LOCAL app.user_id) so triggers can record who acted.
-- Add indexes on timecard_entries(employee_id, pay_period_id), audit_log(table_name, record_id) and leave_ledger(employee_id, leave_type).
-- New York requires payroll records, pay notices and wage statements to be kept for 6 years. Do not hard-delete employees, periods, entries, receipts or attachments; back up and test restores.
+- Daily rows are the source of truth; weekly totals are derived in timecard_weekly and never stored. V1 has deliberately no triggers/procedures (they would require elevated MySQL privileges); period locking and transition rules are enforced in API transactions that re-check period status on every write. DB-level lock triggers are deferred hardening.
+- Audit rows for timecard_entries, employees, pay_periods, leave_ledger and users are written by the API layer inside the same transaction as the change, carrying actor, before/after JSON, request ID, IP, and reason. Status changes and reopens always carry a reason.
+- Indexes on timecard_entries(employee_id, pay_period_id), audit_log(entity_table, entity_id, occurred_at), leave_ledger(employee_id, leave_type) and employee_compensation(employee_id, effective_from).
+- Applicable payroll, wage, time, and related records are retained per CPA/legal confirmation (baseline: six years for NY wage/payroll records). No hard deletes of payroll-related rows; back up and test restores.
 
 ## 8. API routes
 

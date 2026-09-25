@@ -1,6 +1,6 @@
 # DEPLOY.md — deploy decisions, made now so they're not surprises later
 
-Target (3 weeks out): one host running Postgres + API, static UI naast it.
+Target (3 weeks out): one host running MySQL + API, static UI naast it.
 Nothing below needs new infra today — it's a list of constraints current code must respect.
 
 ## 1. Migrations — `npm run migrate` on every deploy
@@ -11,7 +11,7 @@ Nothing below needs new infra today — it's a list of constraints current code 
 - Rules: never edit an applied migration — add a new numbered file.
   Deploys just run `npm run migrate`; re-runs are no-ops.
 - Status: implemented ✅ (dev `.local/pgdata` is throwaway; prod points
-  `DATABASE_URL` at real Postgres — same files, same command).
+  `DATABASE_URL` at real MySQL — same files, same command).
 
 ## 2. Attachments — `storage_path` is an opaque key, not a path
 
@@ -44,7 +44,7 @@ Nothing below needs new infra today — it's a list of constraints current code 
 
 ## 5. Backups — NY requires 6-year payroll record retention
 
-- Nightly `pg_dump` (custom format) + off-host copy; monthly restore test
+- Nightly `mysqldump` + off-host copy; monthly restore test
   into a scratch DB. No hard deletes anywhere (spec §7) — retention is a
   policy, not a cron `DELETE`.
 - `export_log.file_sha256` is the proof of what the CPA received — include
@@ -55,7 +55,7 @@ Nothing below needs new infra today — it's a list of constraints current code 
 - `GET /api/health` returns `{status, service, dbTime}`; `dbTime: null`
   means "API up, DB down". Load balancer / uptime check asserts `status: ok`
   AND non-null `dbTime`.
-- Postgres must start before the API (see `start.bat`: pg → migrate → API → UI).
+- The MySQL84 service must be running before the API (see `start.bat`: MySQL → migrate → API → UI).
 
 ## Explicitly deferred (do NOT build now)
 

@@ -1,30 +1,20 @@
 @echo off
-REM Employee Tracker - starts Postgres + API (port 5000) + UI (port 5173).
-REM Run by double-clicking (Postgres needs your interactive desktop, not a service).
+REM Employee Tracker - uses your MySQL84 service + API (port 5000) + UI (port 5173).
+REM Run by double-clicking.
 
 set ROOT=%~dp0
-set PG=%ROOT%.local\pgbin\bin
-set PGDATA=%ROOT%.local\pgdata
 
-if not exist "%PG%\postgres.exe" (
-  echo [db] Postgres binaries missing under .local\pgbin -- cannot start.
-  pause
-  exit /b 1
-)
-
-"%PG%\pg_ctl.exe" -D "%PGDATA%" status >nul 2>&1
-if not errorlevel 1 goto pgready
-
-echo [db] starting Postgres...
-"%PG%\pg_ctl.exe" -D "%PGDATA%" -l "%ROOT%.local\pg.log" -o "-p 5432" start
-call :waitpg
+sc query MySQL84 | findstr /C:"RUNNING" >nul
 if errorlevel 1 (
-  echo [db] Postgres did not start -- see .local\pg.log
-  pause
-  exit /b 1
+  echo [db] starting MySQL84 service...
+  net start MySQL84
+  if errorlevel 1 (
+    echo [db] could not start MySQL84 -- start it from Services or MySQL Workbench, then re-run.
+    pause
+    exit /b 1
+  )
 )
 
-:pgready
 if not exist "%ROOT%server\node_modules\" (
   echo [setup] installing server deps...
   pushd "%ROOT%server" && call npm install --no-audit --no-fund && popd
@@ -60,13 +50,3 @@ start "" http://localhost:5173
 echo All running at http://localhost:5173
 pause
 exit /b 0
-
-:waitpg
-set TRIES=0
-:waitpg_loop
-"%PG%\pg_ctl.exe" -D "%PGDATA%" status >nul 2>&1
-if not errorlevel 1 exit /b 0
-set /a TRIES+=1
-if %TRIES% GEQ 15 exit /b 1
-timeout /t 1 /nobreak >nul
-goto waitpg_loop

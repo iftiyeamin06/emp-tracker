@@ -1,38 +1,47 @@
 import "dotenv/config";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Client } from "pg";
+import mysql from "mysql2/promise";
 
-// ponytail: migrate self-bootstraps the DB (CREATE DATABASE if missing) and
+// ponytail: migrate self-bootstraps the DB (CREATE DATABASE IF NOT EXISTS) and
 // records applied files in schema_migrations, so deploys just run `npm run migrate`.
-async function main() {
-  const target = process.env.DATABASE_URL ?? "";
-  const u = new URL(target);
-  const dbName = (u.pathname.replace("/", "") || "emp_tracker").replace(/"/g, "");
-  u.pathname = "/postgres";
+function opts(db?: string) {
+  const u = new URL(process.env.DATABASE_URL ?? "");
+  return {
+    host: u.hostname || "127.0.0.1",
+    port: Number(u.port || 3306),
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    ...(db ? { database: db } : {}),
+  };
+}
 
-  const admin = new Client({ connectionString: u.toString() });
-  await admin.connect();
-  await admin.query(`CREATE DATABASE "${dbName}"`).catch((e: any) => {
-    if (e?.code !== "42P04") throw e; // 42P04 = already exists, fine
-  });
+async function main() {
+  const u = new URL(process.env.DATABASE_URL ?? "");
+  const dbName = (u.pathname.replace("/", "") || "emp_tracker").replace(/[`"]/g, "");
+
+  const admin = await mysql.createConnection(opts());
+  await admin.query(
+    `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+  );
   await admin.end();
 
-  const dir = join(__dirname, "migrations");
-  const app = new Client({ connectionString: target });
-  await app.connect();
+  // multipleStatements only here (never on the app pool): the migration file
+  // holds triggers/procedures whose bodies contain semicolons; the server
+  // parses BEGIN/END blocks itself, so no DELIMITER lines are needed.
+  const app = await mysql.createConnection({ ...opts(dbName), multipleStatements: true });
   try {
     await app.query(
-      "CREATE TABLE IF NOT EXISTS schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())"
+      "CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     );
-    const applied = new Set(
-      (await app.query("SELECT filename FROM schema_migrations")).rows.map((r) => r.filename)
-    );
+    const [rows] = await app.query("SELECT filename FROM schema_migrations");
+    const applied = new Set((rows as any[]).map((r) => r.filename));
+    const dir = join(__dirname, "migrations");
     const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
     for (const f of files) {
       if (applied.has(f)) continue;
       await app.query(await readFile(join(dir, f), "utf8"));
-      await app.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [f]);
+      await app.query("INSERT INTO schema_migrations (filename) VALUES (?)", [f]);
       console.log("migrated: " + f);
     }
   } finally {

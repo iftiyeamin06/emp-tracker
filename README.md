@@ -2,6 +2,9 @@
 
 Internal time & activity tracking — Long Island City, NYC rules. See `docs/spec.md`.
 
+Requires the MySQL84 Windows service running with an `emp_tracker` database
+(see `docs/PROGRESS.md`). `start.bat` handles this automatically.
+
 ## Day 1 — run it
 
 ```powershell
