@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { get, put } from "../../api/client";
+import { get, post, put } from "../../api/client";
 import { formatDay } from "./dayCodes";
 
 interface Period {
@@ -164,6 +164,8 @@ export default function TimecardPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [notesByEmp, setNotesByEmp] = useState<Record<number, string | null>>({});
   const flashTimer = useRef<number | null>(null);
   useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
@@ -233,6 +235,21 @@ export default function TimecardPage() {
     S8: { day_type: "SICK", hours: 8 },
     V8: { day_type: "VACATION", hours: 8 },
     "": { day_type: "WORK", hours: 0 },
+  };
+
+  const submit = async () => {
+    if (periodId == null || submitting) return;
+    if (!window.confirm("Submit this period? Admin edits will be locked.")) return; // cancel = no API call
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await post(`/api/pay-periods/${periodId}/submit`);
+      loadGrid(periodId); // refetch: banner flips, grid locks
+    } catch (e: any) {
+      setSubmitError(e?.status === 409 ? "Submit failed — the period is no longer OPEN." : "Submit failed. Nothing was changed.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const save = async () => {
@@ -311,8 +328,14 @@ export default function TimecardPage() {
           {saving ? "Saving…" : "Save"}
         </button>
       )}
+      {!locked && (
+        <button onClick={submit} disabled={dirty || submitting}>
+          {submitting ? "Submitting…" : "Submit Period"}
+        </button>
+      )}
       {savedFlash && <span style={{ color: "green" }}> Saved</span>}
       {saveError && <p style={{ color: "red" }}>{saveError}</p>}
+      {submitError && <p style={{ color: "red" }}>{submitError}</p>}
       {period && period.status !== "OPEN" && <p>Period {period.status} — read only</p>}
       {loading && <p>Loading…</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}

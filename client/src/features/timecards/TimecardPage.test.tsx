@@ -207,4 +207,86 @@ describe("TimecardPage (Stage A)", () => {
     resolvePut((await ok({ data: { saved: 1 } })) as Response);
     await screen.findByText("Saved");
   });
+
+  const openGrid = () =>
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() })
+    );
+
+  const submitBtn = () => screen.getByRole("button", { name: /^(Submit Period|Submitting…)$/ }) as HTMLButtonElement;
+
+  it("Submit visible on OPEN, hidden on SUBMITTED and APPROVED", async () => {
+    openGrid();
+    const { unmount } = render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    expect(submitBtn()).toBeTruthy();
+    unmount();
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods")
+        ? ok({ data: [{ ...periods[0], status: "SUBMITTED" }] })
+        : ok({ data: grid("SUBMITTED") })
+    );
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    expect(screen.queryByRole("button", { name: /Submit Period/ })).toBeNull();
+  });
+
+  it("Submit disabled while dirty", async () => {
+    openGrid();
+    render(<TimecardPage />);
+    await editMonToV8();
+    expect(submitBtn().disabled).toBe(true);
+  });
+
+  it("confirm cancel makes no API call", async () => {
+    const calls: string[] = [];
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() });
+    });
+    (window as any).confirm = vi.fn().mockReturnValue(false);
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(submitBtn());
+    expect(calls.filter((c) => c.startsWith("POST")).length).toBe(0);
+    (window as any).confirm = undefined;
+  });
+
+  it("successful submit refetches into SUBMITTED read-only", async () => {
+    let submitted = false;
+    const subGrid = () => {
+      const g: any = fiveEights();
+      g.period = { ...g.period, status: submitted ? "SUBMITTED" : "OPEN" };
+      return g;
+    };
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") {
+        submitted = true;
+        return ok({ data: { period: { id: 3, status: "SUBMITTED" } } });
+      }
+      if (url.includes("/api/pay-periods")) return ok({ data: periods });
+      return ok({ data: subGrid() });
+    });
+    (window as any).confirm = vi.fn().mockReturnValue(true);
+    const { container } = render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(submitBtn());
+    expect(await screen.findByText("Period SUBMITTED — read only")).toBeTruthy();
+    expect(submitted).toBe(true);
+    expect(container.querySelector("button")).toBeNull(); // no Save/Submit left
+    (window as any).confirm = undefined;
+  });
+
+  it("submit error shows inline and keeps state", async () => {
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") return Promise.reject(new Error("boom"));
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() });
+    });
+    (window as any).confirm = vi.fn().mockReturnValue(true);
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(submitBtn());
+    expect(await screen.findByText("Submit failed. Nothing was changed.")).toBeTruthy();
+    (window as any).confirm = undefined;
+  });
 });
