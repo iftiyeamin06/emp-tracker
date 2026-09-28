@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { get } from "../../api/client";
+import { useEffect, useRef, useState } from "react";
+import { get, put } from "../../api/client";
 import { formatDay } from "./dayCodes";
 
 interface Period {
@@ -17,7 +17,7 @@ interface Day {
 
 interface GridRow {
   employee: { id: number; full_name: string };
-  entry: { bonus_amount: unknown; reimbursement_amount: unknown } | null;
+  entry: { bonus_amount: unknown; reimbursement_amount: unknown; notes: unknown } | null;
   days: Day[];
   computed: {
     reg_hours: unknown;
@@ -161,8 +161,46 @@ export default function TimecardPage() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [notesByEmp, setNotesByEmp] = useState<Record<number, string | null>>({});
+  const flashTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
 
   const locked = period != null && period.status !== "OPEN";
+
+  const applyGrid = (p: Period, rows: GridRow[]) => {
+    setPeriod(p);
+    setBaseRows(rows);
+    const c: Cells = {};
+    const x: Extras = {};
+    const n: Record<number, string | null> = {};
+    for (const r of rows) {
+      c[r.employee.id] = {};
+      for (const d of r.days) c[r.employee.id][String(d.work_date).slice(0, 10)] = formatDay(d.day_type, d.hours);
+      x[r.employee.id] = { bonus: num(r.entry?.bonus_amount), reimb: num(r.entry?.reimbursement_amount) };
+      n[r.employee.id] = (r.entry?.notes as string | null) ?? null; // echoed back on save, never edited in v1
+    }
+    setCells(c);
+    setExtras(x);
+    setNotesByEmp(n);
+    setBaseline(JSON.stringify({ c, x }));
+  };
+
+  const loadGrid = (id: number) => {
+    setLoading(true);
+    setError("");
+    get<{ data: { period: Period; rows: GridRow[] } }>(`/api/timecards/${id}`)
+      .then((j) => {
+        applyGrid(j.data.period, j.data.rows);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError("Could not load timecards.");
+        setLoading(false);
+      });
+  };
 
   useEffect(() => {
     get<{ data: Period[] }>("/api/pay-periods")
@@ -180,32 +218,50 @@ export default function TimecardPage() {
 
   useEffect(() => {
     if (periodId == null) return;
-    setLoading(true);
-    setError("");
-    get<{ data: { period: Period; rows: GridRow[] } }>(`/api/timecards/${periodId}`)
-      .then((j) => {
-        setPeriod(j.data.period);
-        setBaseRows(j.data.rows);
-        const c: Cells = {};
-        const x: Extras = {};
-        for (const r of j.data.rows) {
-          c[r.employee.id] = {};
-          for (const d of r.days) c[r.employee.id][String(d.work_date).slice(0, 10)] = formatDay(d.day_type, d.hours);
-          x[r.employee.id] = { bonus: num(r.entry?.bonus_amount), reimb: num(r.entry?.reimbursement_amount) };
-        }
-        setCells(c);
-        setExtras(x);
-        setBaseline(JSON.stringify({ c, x }));
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Could not load timecards.");
-        setLoading(false);
-      });
+    loadGrid(periodId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodId]);
 
   const dirty = baseline !== "" && JSON.stringify({ c: cells, x: extras }) !== baseline;
   const dates = period ? weekDates(String(period.start_date)) : [];
+
+  // v1 wire codes (route maps SICK to the DB enum). Empty clears the day by
+  // sending a 0-hour WORK row — the route deletes + reinserts per date.
+  const WIRE: Record<string, { day_type: string; hours: number }> = {
+    "8": { day_type: "WORK", hours: 8 },
+    H8: { day_type: "HOLIDAY", hours: 8 },
+    S8: { day_type: "SICK", hours: 8 },
+    V8: { day_type: "VACATION", hours: 8 },
+    "": { day_type: "WORK", hours: 0 },
+  };
+
+  const save = async () => {
+    if (periodId == null || saving) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const rows = baseRows.map((r) => ({
+        employee_id: r.employee.id,
+        days: dates.map((date) => {
+          const w = WIRE[cells[r.employee.id]?.[date] ?? ""];
+          return { work_date: date, day_type: w.day_type, hours: w.hours };
+        }),
+        bonus_amount: Number(extras[r.employee.id]?.bonus ?? 0),
+        reimbursement_amount: Number(extras[r.employee.id]?.reimb ?? 0),
+        notes: notesByEmp[r.employee.id] ?? null,
+      }));
+      await put(`/api/timecards/${periodId}`, { rows });
+      loadGrid(periodId); // refetch: server response is the source of truth
+      setSavedFlash(true);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(() => setSavedFlash(false), 3000);
+    } catch (e: any) {
+      // Local edits are untouched, so nothing is lost; dirty flag stays set.
+      setSaveError(e?.status === 423 ? "Period is no longer OPEN — refetch to see its state." : "Save failed. Your edits are kept — fix the issue and retry.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const commitCell = (empId: number, date: string) => (code: string): boolean => {
     if (!ALLOWED.has(code)) return false; // invalid → caller reverts, state untouched
@@ -250,6 +306,13 @@ export default function TimecardPage() {
         </select>
       </label>{" "}
       {dirty && <span>● Unsaved changes</span>}
+      {!locked && (
+        <button onClick={save} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+      )}
+      {savedFlash && <span style={{ color: "green" }}> Saved</span>}
+      {saveError && <p style={{ color: "red" }}>{saveError}</p>}
       {period && period.status !== "OPEN" && <p>Period {period.status} — read only</p>}
       {loading && <p>Loading…</p>}
       {error && <p style={{ color: "red" }}>{error}</p>}
