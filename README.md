@@ -18,4 +18,4 @@ cd client; npm install; npm run dev
 # → http://localhost:5173 → "API status: ok"
 ```
 
-CPA: Eakub A. Khan CPA P.C. (export only, no payroll in-app).
+External CPA: export only, no payroll in-app.

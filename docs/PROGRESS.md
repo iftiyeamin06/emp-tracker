@@ -1,5 +1,3 @@
-# Progress Log
-
 ## Day 1 — 2026-09-25 — Foundation
 
 Done:
@@ -11,7 +9,8 @@ Done:
 - React + Vite frontend on :5173
 - `start.bat` ensures MySQL84 → migrate → API → UI, opens browser
 - `docs/DEPLOY.md` documents production architecture
-- `docs/spec.md` holds the v4 spec
+- `docs/spec.md` holds the v1 MVP spec
+- `docs/spec-v2-target.md` holds the long-term target (compliance, exports, holiday credits)
 - Pushed to GitHub
 
 Verified:
@@ -60,9 +59,33 @@ Implemented:
   provisional CPA export, cash-receipt control wording, §7 synced;
   DEPLOY reviewed (MySQL audit convention, unbuilt backups/2FA/export).
 Partially: audit lib tested but unwired (no business write routes exist yet).
+**v1 requirement:** every new write route (employees, pay-periods, timecards)
+must call `writeAudit(...)` inside its transaction before commit — no
+exceptions. See DEPLOY.md §3.
 Deferred: holiday credits, DB lock triggers, S3, 2FA flow, exact CPA export.
 Needs CPA/client: S8/SU8 mapping, leave-in-OT treatment, receipt legality,
   export columns, exemption calls, prenatal numbers.
+
+## v1 MVP scope decided — 2026-09-28
+
+Restructured specs to prevent scope creep:
+- `docs/spec.md` — v1 working spec: 10 routes, 3 screens, focused MVP
+- `docs/spec-v2-target.md` — long-term target (full compliance feature set)
+- `agent.md` — added Specs section + Scope discipline rules
+
+v1 builds only:
+- Routes: auth (3), employees (2), pay-periods (3), timecards (2)
+- Screens: Login, Timecard Entry Grid (admin), Owner Report (owner)
+- Must be wired even in v1: audit writes, withOpenPeriod wrapper,
+  compensation in employee_compensation, leave in leave_ledger, no hard deletes
+
+Deferred to v2:
+- Leave ledger UI, holiday credits, cash tracking, exports (Excel/PDF),
+  wage-rule enforcement beyond min-wage check, alerts beyond six,
+  trend charts, audit UI, return/reopen workflow, 2FA implementation
+
+Schema unchanged. All 16 tables remain. Unused tables stay — dropping them
+would require a new migration and gain nothing.
 
 ## Known tradeoffs (accepted, revisit in hardening)
 

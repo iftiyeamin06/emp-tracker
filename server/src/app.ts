@@ -5,6 +5,7 @@ import MySQLStoreFactory from "express-mysql-session";
 import { connectionOptions } from "./db/pool.js";
 import { errorHandler } from "./middleware/error.js";
 import { authRoutes, health } from "./modules/auth/auth.routes.js";
+import { employeeRoutes } from "./modules/employees/employees.routes.js";
 
 export function createApp() {
   const secret = process.env.SESSION_SECRET ?? "";
@@ -34,6 +35,7 @@ export function createApp() {
 
   app.use("/api/health", health);
   app.use("/api/auth", authRoutes);
+  app.use("/api/employees", employeeRoutes);
   app.use(errorHandler);
   return app;
 }
