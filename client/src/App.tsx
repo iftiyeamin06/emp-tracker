@@ -1,51 +1,74 @@
 import { useEffect, useState } from "react";
+import { get } from "./api/client";
+import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
+import ReportPage from "./features/report/ReportPage";
+import TimecardPage from "./features/timecards/TimecardPage";
+import TopBar from "./components/TopBar";
+
+const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
+const KNOWN = ["#/login", "#/report", "#/timecards", "#/"];
+
+function useHashRoute(): string {
+  const [hash, setHash] = useState(window.location.hash || "#/");
+  useEffect(() => {
+    const onChange = () => setHash(window.location.hash || "#/");
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}
 
 export default function App() {
   const [health, setHealth] = useState<any>(null);
-  const [me, setMe] = useState<any>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState("");
-
-  const refreshMe = () =>
-    fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((j) => setMe(j?.user ?? null));
+  const [me, setMe] = useState<SessionUser | null | undefined>(undefined); // undefined = loading
+  const route = useHashRoute();
 
   useEffect(() => {
     fetch("/api/health").then((r) => r.json()).then(setHealth).catch((e) => setHealth({ status: "error: " + e }));
-    refreshMe().catch(() => setMe(null));
+    get<{ user: SessionUser }>("/api/auth/me")
+      .then((j) => setMe(j.user))
+      .catch(() => setMe(null)); // single session check, cached in top-level state
   }, []);
 
-  const login = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr("");
-    const r = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!r.ok) { setErr("Invalid email or password"); return; }
-    setPassword("");
-    refreshMe();
+  // Central guard: unauthenticated + protected -> #/login; logged-in on #/login
+  // or #/ -> role home; unknown route -> #/. Wrong role renders Access denied
+  // below (never a login redirect — the user IS logged in).
+  useEffect(() => {
+    if (me === undefined) return;
+    if (!me) {
+      if (route !== "#/login") window.location.hash = "#/login";
+    } else if (route === "#/login" || route === "#/") {
+      window.location.hash = HOME[me.role];
+    } else if (!KNOWN.includes(route)) {
+      window.location.hash = "#/";
+    }
+  }, [me, route]);
+
+  const logout = () => {
+    setMe(null);
+    window.location.hash = "#/login";
   };
 
-  const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    setMe(null);
-  };
+  if (me === undefined) {
+    return (
+      <main style={{ fontFamily: "system-ui", padding: 24 }}>
+        <p>Loading…</p>
+      </main>
+    );
+  }
 
   return (
-    <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 640 }}>
+    <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 720 }}>
       <h1>Employee Tracker</h1>
       <p>API status: {health ? JSON.stringify(health.status) : "loading…"}</p>
-      {me ? (
-        <p>Signed in as {me.email} ({me.role}) <button onClick={logout}>Log out</button></p>
+      {!me ? (
+        route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />
       ) : (
-        <form onSubmit={login}>
-          <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input placeholder="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button type="submit">Log in</button>
-          {err && <span style={{ color: "red" }}> {err}</span>}
-        </form>
+        <>
+          <TopBar me={me} onLogout={logout} />
+          {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
+          {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
+        </>
       )}
     </main>
   );
