@@ -54,6 +54,30 @@ describe("employees (integration, rolled back)", () => {
     }
   });
 
+  it("list embeds current compensation, null when none exists", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      await createEmployee(conn, valid("RT4"));
+      await conn.query(
+        "INSERT INTO employees (employee_number, full_name, hire_date) VALUES ('RT5','No Comp','2026-09-01')"
+      );
+      const list = await listEmployees(conn);
+      const withComp = list.find((r) => r.employee_number === "RT4") as any;
+      const withoutComp = list.find((r) => r.employee_number === "RT5") as any;
+      assert.deepEqual(withComp.compensation, {
+        pay_type: "HOURLY",
+        rate: 18.5,
+        overtime_status: "NON_EXEMPT",
+        classification: null,
+      });
+      assert.equal(withoutComp.compensation, null);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
   it("duplicate employee_number is 409", async () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();

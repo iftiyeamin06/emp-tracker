@@ -61,13 +61,53 @@ export interface CreatedEmployee {
   compensation: Record<string, unknown>;
 }
 
+interface EmployeeRow {
+  id: number;
+  employee_number: string;
+  full_name: string;
+  hire_date: unknown;
+  termination_date: unknown;
+  pay_type: "HOURLY" | "SALARY" | null;
+  rate: string | number | null;
+  overtime_status: "NON_EXEMPT" | "EXEMPT" | "REVIEW" | null;
+  classification: string | null;
+}
+
 export async function listEmployees(db: Db): Promise<Record<string, unknown>[]> {
   const [rows] = await db.query(
-    `SELECT id, employee_number, full_name, payment_method, pay_notice_signed_on,
-            hire_date, termination_date, created_at
-       FROM employees ORDER BY full_name, id`
+    `SELECT e.id, e.employee_number, e.full_name, e.hire_date, e.termination_date,
+            c.pay_type, c.rate, c.overtime_status, c.classification
+       FROM employees e
+       -- Current compensation: the latest row whose effective range covers
+       -- today (NULL effective_to = still current). Empty when never set.
+       LEFT JOIN LATERAL (
+          SELECT pay_type, rate, overtime_status, classification
+            FROM employee_compensation
+           WHERE employee_id = e.id
+             AND effective_from <= CURDATE()
+             AND (effective_to IS NULL OR effective_to >= CURDATE())
+           ORDER BY effective_from DESC LIMIT 1
+        ) AS c ON TRUE
+      ORDER BY e.full_name, e.id`
   );
-  return rows as Record<string, unknown>[];
+  return (rows as EmployeeRow[]).map((r) => ({
+    id: r.id,
+    employee_number: r.employee_number,
+    full_name: r.full_name,
+    hire_date: r.hire_date,
+    termination_date: r.termination_date,
+    compensation:
+      r.pay_type == null
+        ? null
+        : {
+            pay_type: r.pay_type,
+            // mysql2 returns DECIMAL as string; convert for API response.
+            // Money math elsewhere uses SQL or decimal.js, never JS floats.
+            rate: Number(r.rate),
+            overtime_status: r.overtime_status,
+            classification: r.classification,
+          },
+  }));
 }
 
 // Inserts employee + initial compensation. Caller owns the transaction and the
