@@ -100,3 +100,8 @@ would require a new migration and gain nothing.
 - All calculations in views (`timecard_weekly`, `leave_balances`): single
   definition of every derived number; fine at 20–30 employees, re-evaluate if
   reporting ever outgrows it.
+- V1 naming simplifications (disclosed, not hidden): the API speaks `SICK`
+  while the DB stores `SICK_SAFE_PAID` (the correct legal category; mapped
+  both ways so payloads round-trip), and the API uses `reimbursement_amount`
+  while the column is `reimb_amount`. Non-v1 day types in legacy rows pass
+  through untouched on reads.

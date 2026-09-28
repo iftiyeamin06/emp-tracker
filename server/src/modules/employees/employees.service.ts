@@ -101,8 +101,10 @@ export async function listEmployees(db: Db): Promise<Record<string, unknown>[]> 
         ? null
         : {
             pay_type: r.pay_type,
-            // mysql2 returns DECIMAL as string; convert for API response.
-            // Money math elsewhere uses SQL or decimal.js, never JS floats.
+            // mysql2 returns DECIMAL as string. Display-only coercion here;
+            // no arithmetic on this value. All money math happens in SQL
+            // (view SUMs, aggregates). If JS arithmetic is ever needed,
+            // install decimal.js at that point.
             rate: Number(r.rate),
             overtime_status: r.overtime_status,
             classification: r.classification,

@@ -1,5 +1,12 @@
 import type { PoolConnection } from "mysql2/promise";
 
+// Minimal surface writeAudit needs. Compile-time proof PoolConnection fits:
+export interface AuditConn {
+  query: (sql: string, params?: unknown[]) => Promise<unknown>;
+}
+const _fitsAuditConn: AuditConn = null as unknown as PoolConnection;
+void _fitsAuditConn;
+
 // AUDIT FOUNDATION. MySQL has no SET LOCAL: the caller passes the actor
 // explicitly and MUST use a transaction connection (never the pool), so the
 // audit row commits or rolls back atomically with the change it describes.
@@ -20,7 +27,7 @@ export interface AuditEvent {
 
 const toJson = (v: unknown) => (v === undefined ? null : JSON.stringify(v));
 
-export async function writeAudit(conn: PoolConnection, e: AuditEvent): Promise<void> {
+export async function writeAudit(conn: AuditConn, e: AuditEvent): Promise<void> {
   await conn.query(
     `INSERT INTO audit_log
        (actor_user_id, action, entity_table, entity_id, before_json, after_json, reason, request_id, ip_address)
