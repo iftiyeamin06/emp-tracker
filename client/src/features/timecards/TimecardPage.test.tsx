@@ -283,7 +283,8 @@ describe("TimecardPage (Stage A)", () => {
     fireEvent.click(submitBtn());
     expect(await screen.findByText("Period SUBMITTED — read only")).toBeTruthy();
     expect(submitted).toBe(true);
-    expect(container.querySelector("button")).toBeNull(); // no Save/Submit left
+    expect(screen.queryByRole("button", { name: /^(Save|Submit Period)$/ })).toBeNull(); // toolbar locks
+    expect(screen.getByText("New Period")).toBeTruthy(); // period creation stays
     (window as any).confirm = undefined;
   });
 
@@ -298,5 +299,46 @@ describe("TimecardPage (Stage A)", () => {
     fireEvent.click(submitBtn());
     expect(await screen.findByText("Submit failed. Nothing was changed.")).toBeTruthy();
     (window as any).confirm = undefined;
+  });
+
+  it("New Period happy path: posts computed dates, selects the new one", async () => {
+    const posts: any[] = [];
+    let listCalls = 0;
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") {
+        posts.push(JSON.parse(String(init?.body)));
+        return ok({ data: { period: { id: 9, start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23", status: "OPEN" } } });
+      }
+      if (url.includes("/api/pay-periods")) {
+        listCalls += 1;
+        return ok({ data: listCalls > 1 ? [...periods, { id: 9, start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23", status: "OPEN" }] : periods });
+      }
+      return ok({ data: fiveEights() });
+    });
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(screen.getByText("New Period"));
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } });
+    expect((screen.getByLabelText("Pay date") as HTMLInputElement).value).toBe("2026-10-23"); // start + 11
+    expect(screen.getByText(/Week ends 2026-10-18/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await screen.findByText("Amy Example");
+    expect(posts.length).toBe(1);
+    expect(posts[0]).toEqual({ start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23" });
+    expect(screen.queryByLabelText("Start date")).toBeNull(); // form closed
+  });
+
+  it("New Period overlap error stays inline", async () => {
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") return Promise.reject(Object.assign(new Error("conflict"), { status: 409 }));
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() });
+    });
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(screen.getByText("New Period"));
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-05" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByText("That week overlaps an existing period.")).toBeTruthy();
+    expect((screen.getByLabelText("Start date") as HTMLInputElement).value).toBe("2026-10-05"); // kept
   });
 });

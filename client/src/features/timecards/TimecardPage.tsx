@@ -205,11 +205,23 @@ export default function TimecardPage() {
       });
   };
 
-  useEffect(() => {
+  const [showNew, setShowNew] = useState(false);
+  const [newStart, setNewStart] = useState("");
+  const [newPay, setNewPay] = useState("");
+  const [newError, setNewError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const loadPeriods = (selectId?: number) => {
     get<{ data: Period[] }>("/api/pay-periods")
       .then((j) => {
         setPeriods(j.data);
-        const preferred = j.data.find((p) => p.status === "OPEN") ?? j.data[0] ?? null;
+        // NOTE: `selectId != null && ...` would yield `false` (not nullish),
+        // which ?? would NOT skip — hence the ternary here.
+        const preferred =
+          (selectId != null ? j.data.find((p) => p.id === selectId) : undefined) ??
+          j.data.find((p) => p.status === "OPEN") ??
+          j.data[0] ??
+          null;
         setPeriodId(preferred ? preferred.id : null);
         if (!preferred) setLoading(false);
       })
@@ -217,7 +229,43 @@ export default function TimecardPage() {
         setError("Could not load pay periods.");
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadPeriods();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const addDays = (ymd: string, n: number): string => {
+    const t = new Date(ymd + "T00:00:00Z").getTime();
+    const d = new Date(t + n * 86400000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  };
+
+  const createPeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    setNewError("");
+    try {
+      const j = await post<{ data: { period: Period } }>("/api/pay-periods", {
+        start_date: newStart,
+        end_date: addDays(newStart, 6),
+        pay_date: newPay,
+      });
+      setShowNew(false);
+      setNewStart("");
+      setNewPay("");
+      loadPeriods(j.data.period.id); // refetch list and select the new one
+    } catch (err: any) {
+      setNewError(
+        err?.status === 409
+          ? "That week overlaps an existing period."
+          : "Couldn't create the period. Start must be a Monday and pay day on/after week end."
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     if (periodId == null) return;
@@ -323,6 +371,35 @@ export default function TimecardPage() {
           ))}
         </select>
       </label>{" "}
+      <button onClick={() => { setShowNew((s) => !s); setNewError(""); }}>
+        {showNew ? "Cancel" : "New Period"}
+      </button>
+      {showNew && (
+        <form onSubmit={createPeriod} style={{ margin: "12px 0" }}>
+          <label>
+            Start (Monday){" "}
+            <input
+              aria-label="Start date"
+              type="date"
+              value={newStart}
+              onChange={(e) => {
+                const v = e.target.value;
+                setNewStart(v);
+                if (/^\d{4}-\d{2}-\d{2}$/.test(v)) setNewPay(addDays(v, 11)); // default pay day, editable
+              }}
+            />
+          </label>{" "}
+          <label>
+            Pay date{" "}
+            <input aria-label="Pay date" type="date" value={newPay} onChange={(e) => setNewPay(e.target.value)} />
+          </label>{" "}
+          <span style={{ color: "#666" }}>Week ends {newStart ? addDays(newStart, 6) : "—"}</span>{" "}
+          <button type="submit" disabled={creating || !newStart || !newPay}>
+            {creating ? "Creating…" : "Create"}
+          </button>
+          {newError && <Notice title="Couldn't create the period" message={newError} />}
+        </form>
+      )}
       {dirty && <span>● Unsaved changes</span>}
       {!locked && (
         <button onClick={save} disabled={!dirty || saving}>

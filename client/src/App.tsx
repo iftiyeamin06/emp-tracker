@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { get } from "./api/client";
 import { Logo, Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
+import EmployeesPage from "./features/employees/EmployeesPage";
 import ReportPage from "./features/report/ReportPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import TopBar from "./components/TopBar";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
-const KNOWN = ["#/login", "#/report", "#/timecards", "#/"];
+const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/"];
 
 function useHashRoute(): string {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -63,7 +64,9 @@ export default function App() {
       <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Logo size={32} /> Employee Tracker
       </h1>
-      <p>API status: {health ? JSON.stringify(health.status) : "loading…"}</p>
+      {import.meta.env.DEV && (
+        <p>API status: {health ? JSON.stringify(health.status) : "loading…"}</p>
+      )}
       {!me ? (
         route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />
       ) : (
@@ -71,6 +74,7 @@ export default function App() {
           <TopBar me={me} onLogout={logout} />
           {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
+          {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : <p>Access denied.</p>)}
         </>
       )}
     </main>
