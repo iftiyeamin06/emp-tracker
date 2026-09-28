@@ -47,7 +47,6 @@ export default function App() {
           {err && <span style={{ color: "red" }}> {err}</span>}
         </form>
       )}
-      {health && <pre>{JSON.stringify(health, null, 2)}</pre>}
     </main>
   );
 }

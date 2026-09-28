@@ -44,6 +44,26 @@ To restart after reboot:
   logout→me 401, sessions survive API restart, 11th rapid login→429,
   health dbTime real.
 
+## Foundation corrections — 2026-09-25 (spec §2–§15 batch)
+
+Implemented:
+- Migration 002: PERSONAL/OTHER leave types; compensation pay_frequency +
+  classification; timecard_weekly now resolves the OT threshold from
+  wage_rules (fallback 40). 001 untouched (append-only ✅).
+- Libs: audit.ts (explicit-actor, same-txn writes), overtime.ts (testable
+  mirror of the view), periodTransitions.ts (server-side state machine),
+  leave.ts (accrual/balance/overdraw helpers), periodLock.ts (withOpenPeriod
+  guard; audit proves zero runtime write paths exist to bypass).
+- Tests: 29/29 pass (overtime, transitions + lock guard, leave, audit
+  integration, compensation effective-dating integration).
+- Docs: spec day-code table (TBDs marked), V1/later alerts split,
+  provisional CPA export, cash-receipt control wording, §7 synced;
+  DEPLOY reviewed (MySQL audit convention, unbuilt backups/2FA/export).
+Partially: audit lib tested but unwired (no business write routes exist yet).
+Deferred: holiday credits, DB lock triggers, S3, 2FA flow, exact CPA export.
+Needs CPA/client: S8/SU8 mapping, leave-in-OT treatment, receipt legality,
+  export columns, exemption calls, prenatal numbers.
+
 ## Known tradeoffs (accepted, revisit in hardening)
 
 - No DB-level period lock: MySQL 8.4 + binary logging would require SUPER /

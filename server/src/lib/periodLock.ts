@@ -1,4 +1,10 @@
-import type { Pool, PoolConnection } from "mysql2/promise";
+import type { Pool } from "mysql2/promise";
+
+// Minimal surface assertPeriodOpen needs (PoolConnection satisfies it;
+// tests pass a stub). Keeps the guard unit-testable without a database.
+export interface StatusReader {
+  query: (sql: string, params?: unknown[]) => Promise<[any[], unknown]>;
+}
 
 // LOCK CONTRACT (V1): there are no DB triggers, so every write to
 // timecard_entries, timecard_days, or pay_periods MUST go through
@@ -8,7 +14,7 @@ import type { Pool, PoolConnection } from "mysql2/promise";
 //
 // Status transitions themselves (submit/approve/return/reopen) use their own
 // transition checks + audit writes; they never use this helper.
-export async function assertPeriodOpen(conn: PoolConnection, payPeriodId: number): Promise<void> {
+export async function assertPeriodOpen(conn: StatusReader, payPeriodId: number): Promise<void> {
   const [rows] = await conn.query("SELECT status FROM pay_periods WHERE id = ? FOR UPDATE", [payPeriodId]);
   const status = (rows as any[])[0]?.status as string | undefined;
   if (!status) throw Object.assign(new Error("pay_period_not_found"), { status: 404 });
@@ -19,7 +25,7 @@ export async function assertPeriodOpen(conn: PoolConnection, payPeriodId: number
 export async function withOpenPeriod<T>(
   pool: Pool,
   payPeriodId: number,
-  fn: (conn: PoolConnection) => Promise<T>
+  fn: (conn: StatusReader & { beginTransaction(): Promise<void>; commit(): Promise<void>; rollback(): Promise<void>; release(): void }) => Promise<T>
 ): Promise<T> {
   const conn = await pool.getConnection();
   try {

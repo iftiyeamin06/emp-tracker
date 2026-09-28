@@ -33,7 +33,7 @@ Because the company operates in Long Island City, NYC, New York State Labor Law 
 Employees paid in cash. Cash is a payment method, not a separate classification. It is only compliant when the pay is treated like any other wages: recorded, taxes withheld and reported through the CPA's payroll, and a wage statement issued. Accordingly:
 
 - Cash-paid employees appear in the same weekly grid, approval and CPA export as everyone else. There is no way to exclude someone from the export.
-- Each cash handover is logged (amount, date, who paid, signed receipt scan). Cash is paid after approval on pay date, so the dashboard flags any approved period past its pay date with missing receipts.
+- Each cash handover is logged (amount, date, who paid, signed receipt scan as a company control; whether a signed receipt is statutorily required is TBD — CPA/legal). Cash is paid after approval on pay date, so the dashboard flags any approved period past its pay date with missing receipts.
 - The dashboard shows cash total and receipts outstanding for the period.
 - If anyone is currently paid in cash outside payroll, resolve that with the CPA before go-live. Unreported wages create tax exposure and New York wage-statement and recordkeeping violations that a tracking tool cannot fix.
 
@@ -93,7 +93,7 @@ Leave (NY State and NYC).
 - Pay statements must show leave accrued, used and available (paid and unpaid separately), so the export includes those columns.
 - Manual adjustments need a reason. Warn on entry if usage exceeds the balance.
 
-Daily timecard. The company's physical timecard is the source of truth, so the system records it day by day. Each employee-day has a type: Work, Vacation, Sick, Unpaid Sick, Prenatal, Holiday (paid, not worked), Holiday Worked or Holiday (credit). Weekly totals (worked, regular, OT, vacation, sick, holiday) are always calculated from the days and never typed separately, so every sick, vacation and holiday hour has a date. Optional in/out times per day feed the spread-of-hours and call-in checks.
+Daily timecard. The company's physical timecard is the source of truth, so the system records it day by day. Each employee-day has a type: WORK, VACATION, SICK_SAFE_PAID, PROTECTED_UNPAID, PRENATAL, HOLIDAY (paid, not worked) or HOLIDAY_WORKED. Weekly totals (worked, regular, OT, vacation, sick, holiday) are always calculated from the days and never typed separately, so every sick, vacation and holiday hour has a date. Optional in/out times per day feed the spread-of-hours and call-in checks.
 
 Holidays and holiday credits.
 
@@ -109,6 +109,8 @@ Employee lifecycle. Employees have hire and termination dates. Historical period
 ## 5. Exception rules (dashboard alerts)
 
 Thresholds are configurable by Owner.
+
+V1 implements six: Overtime, Missing entry, Manual OT override, Leave overdraw, Post-submit edit, plus a period-awaiting-approval indicator. All other rows below are deferred to Phase 2+ (kept here so the design stays stable).
 
 | Alert | Default trigger |
 |---|---|
@@ -136,6 +138,17 @@ Thresholds are configurable by Owner.
    - Trend charts (Phase 3): weekly total hours and OT, OT by employee, leave usage by month.
 2. Timecard Entry Grid (Admin).
    - One row per employee with Mon–Sun columns, mirroring the paper card. Type hours in a cell (8 = worked) or prefix a code: V8 vacation, S8 sick, SU8 unpaid sick, P4 prenatal, H8 holiday, HW8 worked holiday. Calendar holidays pre-fill on the right date. Optional in/out times open per day.
+   - Day-code mapping (paper code → day_type; TBD = requires CPA/client confirmation, preserved as-is until then):
+
+     | Code | day_type | Worked | Paid | Leave usage | Counts toward OT 40 | Exported |
+     |---|---|---|---|---|---|---|
+     | 8 | WORK | yes | yes | no | yes | yes |
+     | V8 | VACATION | no | yes (per company policy) | yes | no | yes |
+     | S8 | SICK_SAFE_PAID (TBD: confirm it is never protected-unpaid) | no | yes | yes | no | yes |
+     | SU8 | PROTECTED_UNPAID (TBD: confirm category) | no | no | tracked, unpaid | no | yes |
+     | P4 | PRENATAL (TBD: hour conventions) | no | yes | separate balance | no | yes |
+     | H8 | HOLIDAY | no | yes | no | no | yes |
+     | HW8 | HOLIDAY_WORKED | yes | yes | no | yes | yes |
    - Weekly columns are calculated: Worked, Reg, OT, Vac, Sick, Holiday. Weekly Bonus ($), Reimb ($), Call-in Hrs and Notes are typed. A CASH badge shows on cash-paid rows.
    - Reg and OT shown as read-only computed columns.
    - Live row and column totals; keyboard navigation (Tab / Enter) for fast entry.
@@ -210,8 +223,9 @@ All routes require authentication; role checks are enforced server-side.
 | GET | /api/reports/summary/export?format=pdf\|xlsx | any | Summary report file |
 | POST | /api/exports/:id/mark-sent | any | Record date sent to CPA |
 
-## 9. CPA export
+## 9. CPA export (PROVISIONAL — do not match exactly yet)
 
+- TODO: obtain one recent CPA Time Sheet Excel + one corresponding Payroll Approval Reports PDF, then reconcile columns, order, identifiers, values, totals, formatting and dates exactly. Until then the export stays a clearly-marked provisional adapter.
 - Obtain the CPA's current sample file before building the export, and match column order and headings exactly.
 - Columns expected: Emp Num, Name, S/H, Pay Method, Rate/Salary, Reg, OT, Vac, Bonus, Hol, Reimb, Sick (paid), Sick (unpaid), Prenatal, Spread Days, Call-in Hrs, Sick Accrued, Sick Balance, plus a totals row. Cash-paid employees are always included.
 - Export is allowed only for Approved periods (a draft export can be watermarked "DRAFT").

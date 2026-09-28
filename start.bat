@@ -4,6 +4,9 @@ REM Run by double-clicking.
 
 set ROOT=%~dp0
 
+echo [cleanup] stopping any stale node servers (frees ports 5000/5173)...
+taskkill /F /IM node.exe >nul 2>&1
+
 sc query MySQL84 | findstr /C:"RUNNING" >nul
 if errorlevel 1 (
   echo [db] starting MySQL84 service...

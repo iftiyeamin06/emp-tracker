@@ -10,45 +10,52 @@ Nothing below needs new infra today — it's a list of constraints current code 
 - Applied files are recorded in `schema_migrations` (created by the runner itself).
 - Rules: never edit an applied migration — add a new numbered file.
   Deploys just run `npm run migrate`; re-runs are no-ops.
-- Status: implemented ✅ (dev `.local/pgdata` is throwaway; prod points
-  `DATABASE_URL` at real MySQL — same files, same command).
+- Status: implemented ✅ (prod points `DATABASE_URL` at real MySQL —
+  same files, same command).
 
-## 2. Attachments — `storage_path` is an opaque key, not a path
+## 2. Attachments — `storage_key` is an opaque key, not a path
 
-- `attachments.storage_path` stores a **relative key**, never an absolute
+- `attachments.storage_key` stores a **relative key**, never an absolute
   filesystem path or URL. Format: `attachments/<entry_id>/<uuid>-<filename>`.
 - Why: the same column becomes an S3 key later with zero schema change.
-- `STORAGE_DIR` env (default `./uploads`) is the local-driver root; the API
-  joins root + key. Nothing outside the API may interpret the key.
+- Planned (not built): `STORAGE_DIR` env (default `./uploads`) as the
+  local-driver root; the API joins root + key. Nothing outside the API may
+  interpret the key.
 - Moving to S3 later = new storage driver behind the same read/write
   functions + backfill keys as objects. No migration, no re-upload.
-- Status: convention ✅ (drivers land with Phase 2 attachments work).
+- Status: schema ✅, convention ✅, drivers land with Phase 2 attachments work.
 
-## 3. Audit — `app.user_id` session convention
+## 3. Audit — explicit actor in the same transaction (MySQL has no SET LOCAL)
 
-- Every request transaction runs `SET LOCAL app.user_id = '<id>'`
-  (empty string for unauthenticated/health). Audit triggers/API read it via
-  `current_setting('app.user_id', true)` — never trust a client-sent user id.
-- `SET LOCAL` requires a transaction, so request handlers that write must run
-  inside one; the pool must `RESET`/release cleanly so ids never leak across requests.
-- Status: convention from spec ✅, wiring lands with the Phase 2 audit
-  trigger (`src/middleware/audit.ts` is still a no-op stub — do not rely on it yet).
+- Every audited change runs inside one transaction; the API passes the actor
+  explicitly via `writeAudit(conn, { actorUserId, action, ... })`, which
+  inserts the audit row on the SAME connection before commit — never trust a
+  client-sent user id, never write audit outside the change's transaction.
+- `src/lib/audit.ts` is implemented ✅ and unit/integration-tested ✅.
+- NOT production-ready: no business write routes exist yet, so nothing calls
+  it; approval/export must stay disabled until routes write audit events.
+  (`src/middleware/audit.ts` remains a no-op stub — do not rely on it.)
 
 ## 4. Env / config — 12-factor, `.env` for dev only
 
 - Local: `server/.env` (copied from `.env.example`, git-ignored).
 - Prod: real values come from the host environment, never a committed file.
-- Required: `DATABASE_URL`, `SESSION_SECRET`, `PORT`, `STORAGE_DIR`.
-- `SESSION_SECRET` must be long + random in prod; `STORAGE_DIR` must be a
-  persistent volume (not the repo dir, not `.local/`).
+- Required: `DATABASE_URL`, `SESSION_SECRET`, `PORT`. Prod also sets
+  `COOKIE_SECURE=1` (HTTPS) and a long random `SESSION_SECRET`.
+  `SEED_ADMIN/OWNER_*` are one-time dev bootstrap only, never production.
+- `SESSION_SECRET` must be long + random in prod; uploads (Phase 2) must live
+  on a persistent volume (not the repo dir).
 
-## 5. Backups — NY requires 6-year payroll record retention
+## 5. Backups — retention per CPA/legal confirmation (NOT implemented)
 
-- Nightly `mysqldump` + off-host copy; monthly restore test
-  into a scratch DB. No hard deletes anywhere (spec §7) — retention is a
-  policy, not a cron `DELETE`.
+- Applicable payroll, wage, time, and related records are retained per
+  CPA/legal confirmation (baseline: six years for NY wage/payroll records).
+  No hard deletes of payroll-related rows — retention is a policy, not a
+  cron `DELETE`.
+- Planned, not built: nightly `mysqldump` + off-host copy; monthly restore
+  test into a scratch DB.
 - `export_log.file_sha256` is the proof of what the CPA received — include
-  the DB dump + `uploads/` (or S3 versioning) in the same backup set.
+  the DB dump + uploads in the same backup set once backups exist.
 
 ## 6. Health / ops
 
@@ -57,7 +64,8 @@ Nothing below needs new infra today — it's a list of constraints current code 
   AND non-null `dbTime`.
 - The MySQL84 service must be running before the API (see `start.bat`: MySQL → migrate → API → UI).
 
-## Explicitly deferred (do NOT build now)
+## Explicitly deferred / not production-safe (do NOT build or claim now)
 
-S3 driver, 2FA, automated backups, multi-host, CI pipeline.
-Add each when the deploy actually needs it.
+S3 driver, 2FA enrollment (columns exist, no flow), automated backups,
+multi-host, CI pipeline, real payroll approval (audit unwired — no business
+write routes exist yet), exact CPA export (samples not received).
