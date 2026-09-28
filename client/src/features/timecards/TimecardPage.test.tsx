@@ -47,6 +47,16 @@ describe("TimecardPage (Stage A)", () => {
     expect((screen.getByLabelText("reimb-1") as HTMLInputElement).value).toBe("0");
   });
 
+  it("shows an empty state when the period has no employees", async () => {
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods")
+        ? ok({ data: periods })
+        : ok({ data: { period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" }, rows: [] } })
+    );
+    render(<TimecardPage />);
+    expect(await screen.findByText("No employees yet")).toBeTruthy();
+  });
+
   it("non-OPEN period shows the read-only banner", async () => {
     (fetch as any).mockImplementation((url: string) =>
       url.includes("/api/pay-periods")

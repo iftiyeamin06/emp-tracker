@@ -60,10 +60,10 @@ describe("ReportPage", () => {
     expect(calls.filter((c) => c === "GET /api/timecards/7").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows a loading state while fetching", async () => {
+  it("shows a loading skeleton while fetching", async () => {
     (fetch as any).mockReturnValue(new Promise(() => {})); // never resolves
     const { unmount } = render(<ReportPage />);
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.getByRole("status")).toBeTruthy();
     unmount();
   });
 
@@ -73,5 +73,17 @@ describe("ReportPage", () => {
     );
     render(<ReportPage />);
     expect(await screen.findByText("Could not load timecards.")).toBeTruthy();
+  });
+
+  it("shows empty states for no periods and no rows", async () => {
+    (fetch as any).mockImplementation(() => ok({ data: [] }));
+    const { unmount } = render(<ReportPage />);
+    expect(await screen.findByText("No pay periods yet")).toBeTruthy();
+    unmount();
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: { period: { id: 7, status: "OPEN" }, rows: [] } })
+    );
+    render(<ReportPage />);
+    expect(await screen.findByText("No employees in this period")).toBeTruthy();
   });
 });

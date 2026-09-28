@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { get } from "./api/client";
+import { Logo, Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
 import ReportPage from "./features/report/ReportPage";
 import TimecardPage from "./features/timecards/TimecardPage";
@@ -52,14 +53,16 @@ export default function App() {
   if (me === undefined) {
     return (
       <main style={{ fontFamily: "system-ui", padding: 24 }}>
-        <p>Loading…</p>
+        <Skeleton rows={3} cols={4} />
       </main>
     );
   }
 
   return (
     <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 720 }}>
-      <h1>Employee Tracker</h1>
+      <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Logo size={32} /> Employee Tracker
+      </h1>
       <p>API status: {health ? JSON.stringify(health.status) : "loading…"}</p>
       {!me ? (
         route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />

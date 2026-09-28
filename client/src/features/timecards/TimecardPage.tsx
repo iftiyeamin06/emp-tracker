@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { get, post, put } from "../../api/client";
+import { EmptyState, Notice, ScrollX, Skeleton } from "../../components/polish";
 import { formatDay } from "./dayCodes";
 
 interface Period {
@@ -334,13 +335,20 @@ export default function TimecardPage() {
         </button>
       )}
       {savedFlash && <span style={{ color: "green" }}> Saved</span>}
-      {saveError && <p style={{ color: "red" }}>{saveError}</p>}
-      {submitError && <p style={{ color: "red" }}>{submitError}</p>}
+      {saveError && <Notice title="Couldn't save" message={saveError} />}
+      {submitError && <Notice title="Couldn't submit" message={submitError} />}
       {period && period.status !== "OPEN" && <p>Period {period.status} — read only</p>}
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      {!loading && !error && (
-        <table>
+      {loading && <Skeleton rows={6} cols={10} />}
+      {error && <Notice title="Couldn't load timecards" message="Check your connection, then try again." onRetry={() => periodId != null && loadGrid(periodId)} />}
+      {!loading && !error && periods.length === 0 && (
+        <EmptyState title="No pay periods yet" hint="Create a weekly period to start entering time." />
+      )}
+      {!loading && !error && periods.length > 0 && baseRows.length === 0 && (
+        <EmptyState title="No employees yet" hint="Add employees to the roster, then enter their hours here." />
+      )}
+      {!loading && !error && baseRows.length > 0 && (
+        <ScrollX>
+        <table style={{ minWidth: 760 }}>
           <thead>
             <tr>
               <th>Name</th>
@@ -406,6 +414,7 @@ export default function TimecardPage() {
             })}
           </tbody>
         </table>
+        </ScrollX>
       )}
     </section>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { get, post } from "../../api/client";
+import { EmptyState, Notice, ScrollX, Skeleton } from "../../components/polish";
 
 interface Period {
   id: number;
@@ -35,6 +36,7 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [approving, setApproving] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     get<{ data: Period[] }>("/api/pay-periods")
@@ -64,7 +66,7 @@ export default function ReportPage() {
         setError("Could not load timecards.");
         setLoading(false);
       });
-  }, [periodId]);
+  }, [periodId, reloadKey]);
 
   const approve = async () => {
     if (periodId == null) return;
@@ -106,10 +108,17 @@ export default function ReportPage() {
       )}
       {status === "APPROVED" && <span style={{ color: "green" }}> Approved</span>}
       {status === "OPEN" && <span style={{ color: "#666" }}> Awaiting submission</span>}
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      {!loading && !error && (
-        <table>
+      {loading && <Skeleton rows={5} cols={8} />}
+      {error && <Notice title="Something didn't load" message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
+      {!loading && !error && periods.length === 0 && (
+        <EmptyState title="No pay periods yet" hint="Create a weekly period to see the report." />
+      )}
+      {!loading && !error && periods.length > 0 && rows.length === 0 && (
+        <EmptyState title="No employees in this period" hint="Add employees to the roster first." />
+      )}
+      {!loading && !error && rows.length > 0 && (
+        <ScrollX>
+        <table style={{ minWidth: 640 }}>
           <thead>
             <tr>
               <th>Name</th>
@@ -137,6 +146,7 @@ export default function ReportPage() {
             ))}
           </tbody>
         </table>
+        </ScrollX>
       )}
     </section>
   );
