@@ -3,7 +3,8 @@ import { pool } from "../../db/pool.js";
 import { writeAudit } from "../../lib/audit.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { requireRole } from "../../middleware/role.js";
-import { createPayPeriod, listPayPeriods } from "./payPeriods.service.js";
+import { withOpenPeriod } from "../../lib/periodLock.js";
+import { approvePeriod, createPayPeriod, listPayPeriods, submitPeriod } from "./payPeriods.service.js";
 
 export const payPeriodRoutes = Router();
 
@@ -33,6 +34,42 @@ payPeriodRoutes.post("/", requireAuth, requireRole("ADMIN"), async (req, res, ne
     });
     await conn.commit();
     res.status(201).json({ data: { period } });
+  } catch (e) {
+    await conn.rollback();
+    next(e);
+  } finally {
+    conn.release();
+  }
+});
+
+// Submit reuses withOpenPeriod for the lock; its 423 is converted to 409 so
+// every transition violation reports consistently (423 stays reserved for
+// entry/day writes on locked periods).
+payPeriodRoutes.post("/:id/submit", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "period_id_invalid" });
+    const period = await withOpenPeriod(pool, id, (conn) =>
+      submitPeriod(conn, req.session.user!.id, req.ip, id)
+    );
+    res.json({ data: { period } });
+  } catch (e: any) {
+    if (e?.status === 423) e.status = 409;
+    next(e);
+  }
+});
+
+// Approve cannot use withOpenPeriod (it starts from SUBMITTED, not OPEN), so
+// it locks the row itself the same way. Owner only.
+payPeriodRoutes.post("/:id/approve", requireAuth, requireRole("OWNER"), async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "period_id_invalid" });
+    await conn.beginTransaction();
+    const period = await approvePeriod(conn, req.session.user!.id, req.ip, id);
+    await conn.commit();
+    res.json({ data: { period } });
   } catch (e) {
     await conn.rollback();
     next(e);

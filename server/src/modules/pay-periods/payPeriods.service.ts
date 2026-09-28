@@ -1,4 +1,5 @@
 import type { Db, Tx } from "../employees/employees.service.js";
+import { writeAudit } from "../../lib/audit.js";
 
 export interface PayPeriodInput {
   start_date: string; // YYYY-MM-DD, must be a Monday
@@ -58,5 +59,62 @@ export async function createPayPeriod(conn: Tx, p: PayPeriodInput): Promise<Reco
     throw err;
   }
   const [[period]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ?", [id!])) as any[];
+  return period as Record<string, unknown>;
+}
+
+// submitPeriod / approvePeriod take an open transaction connection and lock
+// the row (SELECT ... FOR UPDATE) before checking status, so concurrent
+// transitions serialize. Caller owns begin/commit + audit is written here,
+// atomically with the change. Wrong start status is 409 (transition
+// conflict); 423 is reserved for entry/day writes on locked periods.
+export async function submitPeriod(
+  conn: Tx,
+  actorId: number,
+  ip: string | undefined,
+  id: number
+): Promise<Record<string, unknown>> {
+  const [[p]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ? FOR UPDATE", [id])) as any[];
+  if (!p) fail(404, "pay_period_not_found");
+  if (p.status !== "OPEN") fail(409, "period_not_open");
+  await conn.query("UPDATE pay_periods SET status = 'SUBMITTED', submitted_by = ?, submitted_at = NOW() WHERE id = ?", [
+    actorId,
+    id,
+  ]);
+  const [[period]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ?", [id])) as any[];
+  await writeAudit(conn, {
+    actorUserId: actorId,
+    action: "status",
+    entityTable: "pay_periods",
+    entityId: id,
+    before: { status: "OPEN" },
+    after: { status: "SUBMITTED" },
+    ip,
+  });
+  return period as Record<string, unknown>;
+}
+
+export async function approvePeriod(
+  conn: Tx,
+  actorId: number,
+  ip: string | undefined,
+  id: number
+): Promise<Record<string, unknown>> {
+  const [[p]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ? FOR UPDATE", [id])) as any[];
+  if (!p) fail(404, "pay_period_not_found");
+  if (p.status !== "SUBMITTED") fail(409, "period_not_submitted");
+  await conn.query("UPDATE pay_periods SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE id = ?", [
+    actorId,
+    id,
+  ]);
+  const [[period]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ?", [id])) as any[];
+  await writeAudit(conn, {
+    actorUserId: actorId,
+    action: "status",
+    entityTable: "pay_periods",
+    entityId: id,
+    before: { status: "SUBMITTED" },
+    after: { status: "APPROVED" },
+    ip,
+  });
   return period as Record<string, unknown>;
 }
