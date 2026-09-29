@@ -15,7 +15,7 @@ describe("compensation history (integration, rolled back)", () => {
         "INSERT INTO employee_compensation (employee_id, effective_from, effective_to, pay_type, rate, overtime_status) VALUES (?, '2026-01-01', '2026-06-30', 'SALARY', 1500.00, 'EXEMPT'), (?, '2026-07-01', NULL, 'HOURLY', 20.00, 'NON_EXEMPT')",
         [eid, eid]
       );
-      const [rp] = await conn.query("INSERT INTO pay_periods (start_date, end_date, pay_date) VALUES ('2026-09-21','2026-09-27','2026-10-02')");
+      const [rp] = await conn.query("INSERT INTO pay_periods (start_date, end_date, pay_date) VALUES ('2030-01-05','2030-01-11','2030-01-15')");
       const pid = (rp as any).insertId;
       const [rn] = await conn.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, eid]);
       const nid = (rn as any).insertId;

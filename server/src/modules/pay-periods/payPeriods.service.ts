@@ -2,9 +2,11 @@ import type { Db, Tx } from "../employees/employees.service.js";
 import { writeAudit } from "../../lib/audit.js";
 
 export interface PayPeriodInput {
-  start_date: string; // YYYY-MM-DD, must be a Monday
-  end_date: string; // must equal start_date + 6
-  pay_date: string; // must be >= end_date
+  start_date: string; // YYYY-MM-DD, must be a Saturday
+  // end_date / pay_date are server-computed (start+6, start+13); caller
+  // values, if sent, are ignored to prevent drift.
+  end_date?: string;
+  pay_date?: string;
 }
 
 const fail = (status: number, message: string): never => {
@@ -18,15 +20,12 @@ const parseDay = (s: string): Date => new Date(s + "T00:00:00Z");
 
 const fmt = (d: Date): string => d.toISOString().slice(0, 10);
 
-function validate(p: PayPeriodInput): void {
+function validate(p: PayPeriodInput): { end_date: string; pay_date: string } {
   if (!p || typeof p !== "object") fail(400, "period_required");
   if (!isDate(p.start_date)) fail(400, "start_date_invalid");
-  if (!isDate(p.end_date)) fail(400, "end_date_invalid");
-  if (!isDate(p.pay_date)) fail(400, "pay_date_invalid");
-  if (parseDay(p.start_date).getUTCDay() !== 1) fail(400, "start_date_not_monday");
-  const expectedEnd = new Date(parseDay(p.start_date).getTime() + 6 * 86400000);
-  if (p.end_date !== fmt(expectedEnd)) fail(400, "end_date_not_start_plus_six");
-  if (p.pay_date < p.end_date) fail(400, "pay_date_before_end");
+  if (parseDay(p.start_date).getUTCDay() !== 6) fail(400, "start_date must be a Saturday");
+  const t = parseDay(p.start_date).getTime();
+  return { end_date: fmt(new Date(t + 6 * 86400000)), pay_date: fmt(new Date(t + 13 * 86400000)) };
 }
 
 export async function listPayPeriods(db: Db): Promise<Record<string, unknown>[]> {
@@ -41,17 +40,17 @@ export async function listPayPeriods(db: Db): Promise<Record<string, unknown>[]>
 // Validates, checks overlap, inserts. Caller owns the transaction and the
 // audit write (both must commit atomically — hard rule 1).
 export async function createPayPeriod(conn: Tx, p: PayPeriodInput): Promise<Record<string, unknown>> {
-  validate(p);
+  const computed = validate(p);
   const [overlap] = await conn.query(
     "SELECT id FROM pay_periods WHERE start_date <= ? AND end_date >= ? LIMIT 1",
-    [p.end_date, p.start_date]
+    [computed.end_date, p.start_date]
   );
   if ((overlap as any[]).length > 0) fail(409, "period_overlaps_existing");
   let id: number;
   try {
     const [r] = await conn.query(
       "INSERT INTO pay_periods (start_date, end_date, pay_date, status) VALUES (?, ?, ?, 'OPEN')",
-      [p.start_date, p.end_date, p.pay_date]
+      [p.start_date, computed.end_date, computed.pay_date]
     );
     id = (r as any).insertId;
   } catch (err: any) {

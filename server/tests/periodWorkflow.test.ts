@@ -16,9 +16,9 @@ const throwsStatus = async (fn: () => Promise<unknown>, status: number, pattern:
   assert.fail("expected throw");
 };
 
-async function freshPeriod(conn: any, start = "2026-10-05") {
-  const end = start === "2026-10-05" ? "2026-10-11" : "2026-10-18";
-  return createPayPeriod(conn, { start_date: start, end_date: end, pay_date: "2026-10-20" });
+async function freshPeriod(conn: any, start = "2031-10-04") {
+  const end = start === "2031-10-04" ? "2031-10-10" : "2031-10-19";
+  return createPayPeriod(conn, { start_date: start, end_date: end, pay_date: "2031-10-20" });
 }
 
 async function realActor(conn: any): Promise<number> {

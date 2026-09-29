@@ -61,12 +61,60 @@ export interface CreatedEmployee {
   compensation: Record<string, unknown>;
 }
 
+// Hard delete is allowed ONLY for employees with zero business history
+// (no timecards, leave, or holiday rows). Anything with history must be
+// terminated instead — and InnoDB RESTRICT constraints back this up even if
+// the check below were ever skipped. The deletion itself is audited.
+// Attachments/cash reference entries, so covering entries covers them too.
+const HISTORY_TABLES = ["timecard_entries", "leave_ledger"] as const;
+
+export async function deleteEmployee(
+  conn: Tx,
+  id: number
+): Promise<{ employee: Record<string, unknown>; compensations: Record<string, unknown>[] }> {
+  const [[emp]] = (await conn.query("SELECT * FROM employees WHERE id = ? LIMIT 1", [id])) as any[];
+  if (!emp) fail(404, "employee_not_found");
+  for (const table of HISTORY_TABLES) {
+    const [rows] = await conn.query(`SELECT id FROM ${table} WHERE employee_id = ? LIMIT 1`, [id]);
+    if ((rows as any[]).length > 0) fail(409, "employee_has_history_terminate_instead");
+  }
+  const [comps] = await conn.query("SELECT * FROM employee_compensation WHERE employee_id = ?", [id]);
+  try {
+    await conn.query("DELETE FROM employee_compensation WHERE employee_id = ?", [id]);
+    await conn.query("DELETE FROM employees WHERE id = ?", [id]);
+  } catch (err: any) {
+    if (err?.errno === 1451) fail(409, "employee_has_history_terminate_instead");
+    throw err;
+  }
+  return { employee: emp as Record<string, unknown>, compensations: comps as Record<string, unknown>[] };
+}
+
+// Termination (and rehire via null) is the ONLY way to remove someone:
+// rows are never hard-deleted, so history and audit stay intact. Terminated
+// employees simply stop appearing in periods after their last day.
+export async function setTermination(
+  conn: Tx,
+  id: number,
+  termination_date: string | null
+): Promise<Record<string, unknown>> {
+  if (termination_date !== null && !isDate(termination_date)) fail(400, "termination_date_invalid");
+  const [[emp]] = (await conn.query("SELECT * FROM employees WHERE id = ? LIMIT 1", [id])) as any[];
+  if (!emp) fail(404, "employee_not_found");
+  const d = new Date(emp.hire_date as any); // DATE arrives as Date; compare calendar parts (TZ-safe)
+  const hire = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (termination_date !== null && termination_date < hire) fail(400, "termination_before_hire");
+  await conn.query("UPDATE employees SET termination_date = ? WHERE id = ?", [termination_date, id]);
+  const [[after]] = (await conn.query("SELECT * FROM employees WHERE id = ?", [id])) as any[];
+  return after as Record<string, unknown>;
+}
+
 interface EmployeeRow {
   id: number;
   employee_number: string;
   full_name: string;
   hire_date: unknown;
   termination_date: unknown;
+  payment_method: string;
   pay_type: "HOURLY" | "SALARY" | null;
   rate: string | number | null;
   overtime_status: "NON_EXEMPT" | "EXEMPT" | "REVIEW" | null;
@@ -75,7 +123,7 @@ interface EmployeeRow {
 
 export async function listEmployees(db: Db): Promise<Record<string, unknown>[]> {
   const [rows] = await db.query(
-    `SELECT e.id, e.employee_number, e.full_name, e.hire_date, e.termination_date,
+    `SELECT e.id, e.employee_number, e.full_name, e.hire_date, e.termination_date, e.payment_method,
             c.pay_type, c.rate, c.overtime_status, c.classification
        FROM employees e
        -- Current compensation: the latest row whose effective range covers
@@ -96,6 +144,7 @@ export async function listEmployees(db: Db): Promise<Record<string, unknown>[]> 
     full_name: r.full_name,
     hire_date: r.hire_date,
     termination_date: r.termination_date,
+    payment_method: r.payment_method,
     compensation:
       r.pay_type == null
         ? null

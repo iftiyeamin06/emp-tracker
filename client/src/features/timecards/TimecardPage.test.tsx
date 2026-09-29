@@ -32,6 +32,16 @@ describe("TimecardPage (Stage A)", () => {
     vi.unstubAllGlobals();
   });
 
+  it("renders day headers Saturday first", async () => {
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("OPEN") })
+    );
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    const headers = [...document.querySelectorAll("thead th")].map((h) => h.textContent);
+    expect(headers.slice(1, 8)).toEqual(["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"]);
+  });
+
   it("renders employees and days from mocked API", async () => {
     (fetch as any).mockImplementation((url: string) =>
       url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("OPEN") })
@@ -40,8 +50,17 @@ describe("TimecardPage (Stage A)", () => {
     const row = (await screen.findByText("Amy Example")).closest("tr");
     const cells = [...(row?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
     expect(cells[0]).toBe("Amy Example");
-    expect(cells.slice(1, 8)).toEqual(["8", "H8", "S8", "V8", "–", "–", "–"]);
-    expect(cells.slice(8, 13)).toEqual(["8", "0", "8", "8", "8"]);
+    // Day cells are inputs now — assert values, not textContent.
+    const dayVals = ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11"].map(
+      (d) => (screen.getByLabelText(`day-1-${d}`) as HTMLInputElement).value
+    );
+    expect(dayVals).toEqual(["8", "H8", "S8", "V8", "", "", ""]);
+    // Computed cells are disabled inputs — same values, same labels.
+    expect((screen.getByLabelText("reg-1") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("ot-1") as HTMLInputElement).value).toBe("0");
+    expect((screen.getByLabelText("vac-1") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("hol-1") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("sick-1") as HTMLInputElement).value).toBe("8");
     // Bonus/Reimb are inputs now — assert values, not textContent.
     expect((screen.getByLabelText("bonus-1") as HTMLInputElement).value).toBe("50");
     expect((screen.getByLabelText("reimb-1") as HTMLInputElement).value).toBe("0");
@@ -54,7 +73,8 @@ describe("TimecardPage (Stage A)", () => {
         : ok({ data: { period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" }, rows: [] } })
     );
     render(<TimecardPage />);
-    expect(await screen.findByText("No employees yet")).toBeTruthy();
+    expect(await screen.findByText("No employees in this period")).toBeTruthy();
+    expect(screen.getByText("Go to Employees").closest("a")).toHaveProperty("href", expect.stringContaining("#/employees"));
   });
 
   it("non-OPEN period shows the read-only banner", async () => {
@@ -88,26 +108,20 @@ describe("TimecardPage (Stage A)", () => {
       url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() })
     );
 
-  const regOf = () => {
-    const row = screen.getByText("Amy Example").closest("tr");
-    return [...(row?.querySelectorAll("td") ?? [])].map((c) => c.textContent);
-  };
+  const monInput = () => screen.getByLabelText("day-1-2026-10-05") as HTMLInputElement;
 
-  const clickMon = () => {
-    const row = screen.getByText("Amy Example").closest("tr");
-    fireEvent.click(row?.querySelectorAll("td")[1] as Element);
-  };
+  const regOf = (name: "reg" | "ot" | "vac" | "hol" | "reimb" | "sick") =>
+    (screen.getByLabelText(`${name}-1`) as HTMLInputElement).value;
 
   it("click + Enter updates the cell and recomputes Reg", async () => {
     mockOpen();
     render(<TimecardPage />);
     await screen.findByText("Amy Example");
-    clickMon();
-    const input = screen.getByLabelText("day-1-2026-10-05");
+    const input = monInput();
     fireEvent.change(input, { target: { value: "V8" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(regOf()[1]).toBe("V8");
-    expect(regOf()[8]).toBe("32"); // 4 × 8
+    expect(monInput().value).toBe("V8");
+    expect(regOf("reg")).toBe("32"); // 4 × 8
     expect(await screen.findByText("● Unsaved changes")).toBeTruthy();
   });
 
@@ -115,12 +129,11 @@ describe("TimecardPage (Stage A)", () => {
     mockOpen();
     render(<TimecardPage />);
     await screen.findByText("Amy Example");
-    clickMon();
-    const input = screen.getByLabelText("day-1-2026-10-05");
+    const input = monInput();
     fireEvent.change(input, { target: { value: "V8" } });
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(regOf()[1]).toBe("8");
-    expect(regOf()[8]).toBe("40");
+    expect(monInput().value).toBe("8");
+    expect(regOf("reg")).toBe("40");
     expect(screen.queryByText("● Unsaved changes")).toBeNull();
   });
 
@@ -128,12 +141,72 @@ describe("TimecardPage (Stage A)", () => {
     mockOpen();
     render(<TimecardPage />);
     await screen.findByText("Amy Example");
-    clickMon();
-    const input = screen.getByLabelText("day-1-2026-10-05");
+    const input = monInput();
     fireEvent.change(input, { target: { value: "X9" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(regOf()[1]).toBe("8");
+    fireEvent.blur(input);
+    expect(monInput().value).toBe("8");
     expect(screen.queryByText("● Unsaved changes")).toBeNull();
+  });
+
+  it("exempt employee previews no OT", async () => {
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods")
+        ? ok({ data: periods })
+        : ok({ data: {
+            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" },
+            rows: [{
+              employee: { id: 1, full_name: "Amy Example", overtime_status: "EXEMPT" },
+              entry: { bonus_amount: "0.00", reimbursement_amount: "0.00" },
+              days: ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09"].map((d) => ({
+                work_date: d, day_type: "WORK", hours: "9.00",
+              })),
+              computed: null,
+            }],
+          } })
+    );
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    const input = screen.getByLabelText("day-1-2026-10-09") as HTMLInputElement; // dirty the row to activate preview
+    fireEvent.change(input, { target: { value: "8" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect((screen.getByLabelText("reg-1") as HTMLInputElement).value).toBe("44"); // 4×9+8, no cap
+    expect((screen.getByLabelText("ot-1") as HTMLInputElement).value).toBe("0"); // exempt: never OT
+  });
+
+  it("HW8 commits and counts as worked", async () => {
+    mockOpen();
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    const input = monInput();
+    fireEvent.change(input, { target: { value: "hw8" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(monInput().value).toBe("HW8");
+    expect(regOf("reg")).toBe("40"); // 4×8 + HW8 8h = 40 worked
+  });
+
+  it("accepts numeric hours and recomputes from real hours", async () => {
+    mockOpen();
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    const input = monInput();
+    fireEvent.change(input, { target: { value: "9" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(monInput().value).toBe("9");
+    expect(regOf("reg")).toBe("40"); // 9 + 4×8 = 41 → reg 40
+    expect(regOf("ot")).toBe("1"); // ot 1
+    expect(await screen.findByText("● Unsaved changes")).toBeTruthy();
+  });
+
+  it("save sends numeric hours through as WORK", async () => {
+    const flow = mockSaveFlow(() => ok({ data: { saved: 1 } }));
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    const input = monInput();
+    fireEvent.change(input, { target: { value: "7.5" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(saveBtn());
+    await screen.findByText("Saved");
+    expect(flow.puts[0].rows[0].days[0]).toEqual({ work_date: "2026-10-05", day_type: "WORK", hours: 7.5 });
   });
 
   it("SUBMITTED cells stay read-only (no inputs render)", async () => {
@@ -198,8 +271,7 @@ describe("TimecardPage (Stage A)", () => {
     fireEvent.click(saveBtn());
     expect(await screen.findByText("Save failed. Your edits are kept — fix the issue and retry.")).toBeTruthy();
     expect(screen.getByText("● Unsaved changes")).toBeTruthy();
-    const row = screen.getByText("Amy Example").closest("tr");
-    expect(row?.querySelectorAll("td")[1].textContent).toBe("V8"); // edit preserved
+    expect(monInput().value).toBe("V8"); // edit preserved
   });
 
   it("Save is disabled when clean and while saving", async () => {
@@ -213,7 +285,7 @@ describe("TimecardPage (Stage A)", () => {
     expect(saveBtn().disabled).toBe(false);
     fireEvent.click(saveBtn());
     expect(saveBtn().disabled).toBe(true);
-    expect(saveBtn().textContent).toBe("Saving…");
+    expect(saveBtn().textContent).toContain("Saving…");
     resolvePut((await ok({ data: { saved: 1 } })) as Response);
     await screen.findByText("Saved");
   });
@@ -320,7 +392,7 @@ describe("TimecardPage (Stage A)", () => {
     fireEvent.click(screen.getByText("New Period"));
     fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } });
     expect((screen.getByLabelText("Pay date") as HTMLInputElement).value).toBe("2026-10-23"); // start + 11
-    expect(screen.getByText(/Week ends 2026-10-18/)).toBeTruthy();
+    expect(screen.getByText(/Week ends: Sun Oct 18, 2026/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await screen.findByText("Amy Example");
     expect(posts.length).toBe(1);
@@ -340,5 +412,25 @@ describe("TimecardPage (Stage A)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText("That week overlaps an existing period.")).toBeTruthy();
     expect((screen.getByLabelText("Start date") as HTMLInputElement).value).toBe("2026-10-05"); // kept
+  });
+
+  it("shows the CASH badge only for cash-paid employees", async () => {
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods")
+        ? ok({ data: periods })
+        : ok({ data: {
+            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" },
+            rows: [
+              { employee: { id: 1, full_name: "Cash Person", payment_method: "CASH" }, entry: null, days: [], computed: null },
+              { employee: { id: 2, full_name: "Bank Person", payment_method: "DIRECT_DEPOSIT" }, entry: null, days: [], computed: null },
+            ],
+          } })
+    );
+    render(<TimecardPage />);
+    await screen.findByText("Cash Person");
+    await screen.findByText("Bank Person");
+    expect(screen.getAllByText("CASH").length).toBe(1);
+    expect(screen.getByText("Cash Person").closest("tr")?.textContent).toContain("CASH");
+    expect(screen.getByText("Bank Person").closest("tr")?.textContent).not.toContain("CASH");
   });
 });

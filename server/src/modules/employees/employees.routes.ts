@@ -3,7 +3,7 @@ import { pool } from "../../db/pool.js";
 import { writeAudit } from "../../lib/audit.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { requireRole } from "../../middleware/role.js";
-import { createEmployee, listEmployees } from "./employees.service.js";
+import { createEmployee, deleteEmployee, listEmployees, setTermination } from "./employees.service.js";
 
 export const employeeRoutes = Router();
 
@@ -43,6 +43,64 @@ employeeRoutes.post("/", requireAuth, requireRole("ADMIN"), async (req, res, nex
     });
     await conn.commit();
     res.status(201).json({ data: { employee, compensation } });
+  } catch (e) {
+    await conn.rollback();
+    next(e);
+  } finally {
+    conn.release();
+  }
+});
+
+// Terminate (date) or rehire (null). Admin only. No hard deletes, ever:
+// the row stays, history stays, only future visibility changes.
+employeeRoutes.put("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "employee_id_invalid" });
+    const { termination_date = null } = req.body ?? {};
+    await conn.beginTransaction();
+    const [[before]] = (await conn.query("SELECT * FROM employees WHERE id = ? LIMIT 1", [id])) as any[];
+    const employee = await setTermination(conn, id, termination_date);
+    await writeAudit(conn, {
+      actorUserId: req.session.user!.id,
+      action: termination_date == null ? "employee.rehire" : "employee.terminate",
+      entityTable: "employees",
+      entityId: id,
+      before,
+      after: employee,
+      ip: req.ip,
+    });
+    await conn.commit();
+    res.json({ data: { employee } });
+  } catch (e) {
+    await conn.rollback();
+    next(e);
+  } finally {
+    conn.release();
+  }
+});
+
+// Permanent delete, admin only. Allowed ONLY with zero business history
+// (service checks + FK RESTRICT backstop); otherwise 409 directing to
+// terminate. The deletion is audited before commit.
+employeeRoutes.delete("/:id", requireAuth, requireRole("ADMIN"), async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "employee_id_invalid" });
+    await conn.beginTransaction();
+    const { employee, compensations } = await deleteEmployee(conn, id);
+    await writeAudit(conn, {
+      actorUserId: req.session.user!.id,
+      action: "employee.delete",
+      entityTable: "employees",
+      entityId: id,
+      before: { employee, compensations },
+      ip: req.ip,
+    });
+    await conn.commit();
+    res.json({ data: { deleted: id } });
   } catch (e) {
     await conn.rollback();
     next(e);

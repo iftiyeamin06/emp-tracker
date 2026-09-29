@@ -80,4 +80,22 @@ describe("App routing", () => {
     expect(calls).toContain("POST /api/auth/logout");
     expect(await screen.findByRole("button", { name: "Log in" })).toBeTruthy();
   });
+
+  it("sidebar shows role-filtered nav links", async () => {
+    mockApi({ email: "a@x.com", role: "ADMIN" });
+    window.location.hash = "#/timecards";
+    const { unmount } = render(<App />);
+    const tLink = await screen.findByText("Timecards", { selector: "nav a" });
+    expect(tLink).toBeTruthy();
+    const nav = tLink.closest("nav");
+    expect(nav?.textContent).toContain("Employees");
+    expect(nav?.textContent).not.toContain("Report");
+    unmount();
+    cleanup();
+    mockApi({ email: "o@x.com", role: "OWNER" });
+    window.location.hash = "#/report";
+    render(<App />);
+    const nav2 = await screen.findByText("Report", { selector: "nav a" });
+    expect(nav2).toBeTruthy();
+  });
 });

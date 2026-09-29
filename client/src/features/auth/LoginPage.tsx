@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { post } from "../../api/client";
-import { Card, Logo, Notice } from "../../components/polish";
+import { Logo, Notice } from "../../components/polish";
 
 export interface SessionUser {
   email: string;
@@ -35,8 +35,19 @@ export default function LoginPage({ onSuccess }: { onSuccess: (u: SessionUser) =
   };
 
   return (
-    <Card>
-      <Logo />
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f8fafc",
+        margin: "-24px",
+        padding: 24,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 420, textAlign: "center" }}>
+      <Logo size={56} />
       <h2 style={{ margin: "12px 0 4px" }}>Employee Tracker</h2>
       <p style={{ margin: "0 0 16px", color: "#6b7280", fontSize: 14 }}>Sign in to continue</p>
       <form onSubmit={login} style={{ textAlign: "left" }}>
@@ -60,6 +71,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (u: SessionUser) =
         </button>
         {err && <Notice title="Couldn't sign you in" message="Check your email and password, then try again." />}
       </form>
-    </Card>
+      </div>
+    </div>
   );
 }

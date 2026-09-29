@@ -25,13 +25,13 @@ async function setup(conn: any) {
     hire_date: "2026-09-01",
     compensation: { pay_type: "HOURLY", rate: 18, overtime_status: "NON_EXEMPT" },
   });
-  const period = await createPayPeriod(conn, { start_date: "2026-10-05", end_date: "2026-10-11", pay_date: "2026-10-14" });
+  const period = await createPayPeriod(conn, { start_date: "2031-10-04", end_date: "2031-10-10", pay_date: "2031-10-15" });
   return { eid: employee.id as number, pid: period.id as number };
 }
 
 const week = (eid: number) => ({
   employee_id: eid,
-  days: ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09"].map((d) => ({
+  days: ["2031-10-04", "2031-10-05", "2031-10-06", "2031-10-07", "2031-10-08"].map((d) => ({
     work_date: d,
     day_type: "WORK",
     hours: 8,
@@ -106,7 +106,7 @@ describe("timecards (integration, rolled back)", () => {
       const { eid, pid } = await setup(conn);
       const period = (await getGrid(conn, pid)).period as any;
       const bad = week(eid);
-      (bad.days as any[]).push({ work_date: "2026-10-12", day_type: "WORK", hours: 8 });
+      (bad.days as any[]).push({ work_date: "2031-10-13", day_type: "WORK", hours: 8 });
       await throwsStatus(() => saveGrid(conn, period, 1, undefined, [bad]), 400, /work_date_outside_period/);
     } finally {
       await conn.rollback();
@@ -121,7 +121,7 @@ describe("timecards (integration, rolled back)", () => {
       const { eid, pid } = await setup(conn);
       const period = (await getGrid(conn, pid)).period as any;
       const bad = week(eid);
-      (bad.days as any[])[0] = { work_date: "2026-10-05", day_type: "FUNDAY", hours: 8 };
+      (bad.days as any[])[0] = { work_date: "2031-10-04", day_type: "FUNDAY", hours: 8 };
       await throwsStatus(() => saveGrid(conn, period, 1, undefined, [bad]), 400, /day_type_invalid/);
     } finally {
       await conn.rollback();
@@ -136,8 +136,28 @@ describe("timecards (integration, rolled back)", () => {
       const { eid, pid } = await setup(conn);
       const period = (await getGrid(conn, pid)).period as any;
       const bad = week(eid);
-      (bad.days as any[])[0] = { work_date: "2026-10-05", day_type: "WORK", hours: 25 };
+      (bad.days as any[])[0] = { work_date: "2031-10-04", day_type: "WORK", hours: 25 };
       await throwsStatus(() => saveGrid(conn, period, 1, undefined, [bad]), 400, /hours_invalid/);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("HW8 stores HOLIDAY_WORKED and counts toward worked/OT", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const { eid, pid } = await setup(conn);
+      const period = (await getGrid(conn, pid)).period as any;
+      const row = week(eid);
+      (row.days as any[])[4] = { work_date: "2031-10-08", day_type: "HW8", hours: 8 };
+      await saveGrid(conn, period, 1, undefined, [row]);
+      const [days] = await conn.query("SELECT day_type FROM timecard_days WHERE work_date='2031-10-08'");
+      assert.equal((days as any[])[0].day_type, "HOLIDAY_WORKED");
+      const [w] = await conn.query("SELECT worked_hours, holiday_worked_hours FROM timecard_weekly WHERE employee_id=?", [eid]);
+      assert.equal(Number((w as any[])[0].worked_hours), 40);
+      assert.equal(Number((w as any[])[0].holiday_worked_hours), 8);
     } finally {
       await conn.rollback();
       await conn.end();

@@ -1,11 +1,11 @@
 import type { Db, Tx } from "../employees/employees.service.js";
 import { writeAudit } from "../../lib/audit.js";
 
-// V1 day-type mapping. The API speaks 4 codes; the DB enum is wider.
-// SICK means SICK_SAFE_PAID here (protected-unpaid/prenatal/holiday-worked
-// rows can only exist outside v1 and pass through untouched on reads).
-const TO_DB: Record<string, string> = { WORK: "WORK", HOLIDAY: "HOLIDAY", SICK: "SICK_SAFE_PAID", VACATION: "VACATION" };
-const FROM_DB: Record<string, string> = { WORK: "WORK", HOLIDAY: "HOLIDAY", SICK_SAFE_PAID: "SICK", VACATION: "VACATION" };
+// V1 day-type mapping. The API speaks WORK/HOLIDAY/SICK/VACATION plus HW8
+// (worked holiday: regular hours toward OT, no premium/comp in v1).
+// SICK means SICK_SAFE_PAID; other DB values pass through untouched on reads.
+const TO_DB: Record<string, string> = { WORK: "WORK", HOLIDAY: "HOLIDAY", SICK: "SICK_SAFE_PAID", VACATION: "VACATION", HW8: "HOLIDAY_WORKED" };
+const FROM_DB: Record<string, string> = { WORK: "WORK", HOLIDAY: "HOLIDAY", SICK_SAFE_PAID: "SICK", VACATION: "VACATION", HOLIDAY_WORKED: "HW8" };
 const V1_TYPES = Object.keys(TO_DB);
 
 const fail = (status: number, message: string): never => {
@@ -87,10 +87,15 @@ export interface GridRow {
 export async function getGrid(db: Db, periodId: number): Promise<{ period: PeriodRow; rows: GridRow[] }> {
   const period = await getPeriod(db, periodId);
   const [emps] = await db.query(
-    `SELECT id, employee_number, full_name FROM employees
+    `SELECT id, employee_number, full_name, payment_method,
+       (SELECT overtime_status FROM employee_compensation
+         WHERE employee_id = employees.id AND effective_from <= ?
+           AND (effective_to IS NULL OR effective_to >= ?)
+         ORDER BY effective_from DESC LIMIT 1) AS overtime_status
+      FROM employees
       WHERE hire_date <= ? AND (termination_date IS NULL OR termination_date >= ?)
       ORDER BY full_name, id`,
-    [ymd(period.end_date), ymd(period.start_date)]
+    [ymd(period.end_date), ymd(period.end_date), ymd(period.end_date), ymd(period.start_date)]
   );
   const employees = emps as any[];
   const [entries] = await db.query("SELECT * FROM timecard_entries WHERE pay_period_id = ?", [periodId]);

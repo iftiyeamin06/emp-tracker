@@ -1,14 +1,20 @@
 import { useEffect, useState } from "react";
 import { get } from "./api/client";
-import { Logo, Skeleton } from "./components/polish";
+import { c } from "./components/theme";
+import { Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
-import EmployeesPage from "./features/employees/EmployeesPage";
 import ReportPage from "./features/report/ReportPage";
 import TimecardPage from "./features/timecards/TimecardPage";
-import TopBar from "./components/TopBar";
+import EmployeesPage from "./features/employees/EmployeesPage";
+import { Sidebar, TopBar } from "./components/TopBar";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
 const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/"];
+const TITLES: Record<string, string> = {
+  "#/report": "Weekly Report",
+  "#/timecards": "Timecards",
+  "#/employees": "Employees",
+};
 
 function useHashRoute(): string {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -21,12 +27,10 @@ function useHashRoute(): string {
 }
 
 export default function App() {
-  const [health, setHealth] = useState<any>(null);
   const [me, setMe] = useState<SessionUser | null | undefined>(undefined); // undefined = loading
   const route = useHashRoute();
 
   useEffect(() => {
-    fetch("/api/health").then((r) => r.json()).then(setHealth).catch((e) => setHealth({ status: "error: " + e }));
     get<{ user: SessionUser }>("/api/auth/me")
       .then((j) => setMe(j.user))
       .catch(() => setMe(null)); // single session check, cached in top-level state
@@ -59,24 +63,25 @@ export default function App() {
     );
   }
 
+  if (!me) {
+    return (
+      <main style={{ fontFamily: "system-ui" }}>
+        {route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />}
+      </main>
+    );
+  }
+
   return (
-    <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 720 }}>
-      <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Logo size={32} /> Employee Tracker
-      </h1>
-      {import.meta.env.DEV && (
-        <p>API status: {health ? JSON.stringify(health.status) : "loading…"}</p>
-      )}
-      {!me ? (
-        route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />
-      ) : (
-        <>
-          <TopBar me={me} onLogout={logout} />
+    <div style={{ display: "flex", minHeight: "100vh", background: c.bg, fontFamily: "system-ui" }}>
+      <Sidebar role={me.role} route={route} />
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} />
+        <main style={{ padding: 24 }}>
           {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
           {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : <p>Access denied.</p>)}
-        </>
-      )}
-    </main>
+        </main>
+      </div>
+    </div>
   );
 }

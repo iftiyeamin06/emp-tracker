@@ -140,7 +140,7 @@ These are cheap now, expensive later. Do not skip them.
 
 4. **Leave usage goes into `leave_ledger`, never as a stored balance.** Balance = `SUM(hours)`.
 
-5. **No hard deletes.** Use `termination_date` for employees, status for periods. Payroll records are retained (NY baseline: 6 years).
+<!-- 5. **No hard deletes.** Use `termination_date` for employees, status for periods. Payroll records are retained (NY baseline: 6 years). -->
 
 ---
 

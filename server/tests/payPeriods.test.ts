@@ -17,23 +17,22 @@ const throwsStatus = async (fn: () => Promise<unknown>, status: number, pattern:
 };
 
 describe("pay periods (integration, rolled back)", () => {
-  it("create valid period + audit; list returns it", async () => {
+  it("Saturday start creates the week with server-computed dates", async () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
-      const period = await createPayPeriod(conn, {
-        start_date: "2026-10-05", // Monday
-        end_date: "2026-10-11",
-        pay_date: "2026-10-14",
-      });
+      const period = await createPayPeriod(conn, { start_date: "2031-10-04" }); // Saturday
       assert.equal(period.status, "OPEN");
-      await writeAudit(conn, { actorUserId: 1, action: "pay_period.create", entityTable: "pay_periods", entityId: period.id as number, after: period });
-      const list = await listPayPeriods(conn);
       const ymd = (v: unknown) => {
         const d = new Date(v as any);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       };
-      assert.ok(list.some((r) => ymd(r.start_date) === "2026-10-05"));
+      assert.equal(ymd(period.start_date), "2031-10-04");
+      assert.equal(ymd(period.end_date), "2031-10-10"); // start + 6 (Friday)
+      assert.equal(ymd(period.pay_date), "2031-10-17"); // start + 13 (Friday)
+      await writeAudit(conn, { actorUserId: 1, action: "pay_period.create", entityTable: "pay_periods", entityId: period.id as number, after: period });
+      const list = await listPayPeriods(conn);
+      assert.ok(list.some((r) => ymd(r.start_date) === "2031-10-04"));
       const [audit] = await conn.query(
         "SELECT action FROM audit_log WHERE entity_table='pay_periods' AND entity_id=?",
         [period.id]
@@ -45,14 +44,29 @@ describe("pay periods (integration, rolled back)", () => {
     }
   });
 
-  it("rejects non-Monday start_date", async () => {
+  it("rejects Friday start_date", async () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
       await throwsStatus(
-        () => createPayPeriod(conn, { start_date: "2026-10-06", end_date: "2026-10-12", pay_date: "2026-10-14" }),
+        () => createPayPeriod(conn, { start_date: "2031-10-03" }),
         400,
-        /start_date_not_monday/
+        /start_date must be a Saturday/
+      );
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("rejects Monday start_date", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      await throwsStatus(
+        () => createPayPeriod(conn, { start_date: "2031-10-06" }),
+        400,
+        /start_date must be a Saturday/
       );
     } finally {
       await conn.rollback();
@@ -64,31 +78,11 @@ describe("pay periods (integration, rolled back)", () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
-      await createPayPeriod(conn, { start_date: "2026-10-05", end_date: "2026-10-11", pay_date: "2026-10-14" });
+      await createPayPeriod(conn, { start_date: "2031-10-04" });
       await throwsStatus(
-        () => createPayPeriod(conn, { start_date: "2026-10-05", end_date: "2026-10-11", pay_date: "2026-10-15" }),
+        () => createPayPeriod(conn, { start_date: "2031-10-04" }),
         409,
         /period_overlaps_existing/
-      );
-    } finally {
-      await conn.rollback();
-      await conn.end();
-    }
-  });
-
-  it("rejects end_date != start_date + 6 and pay_date before end", async () => {
-    const conn = await mysql.createConnection(connectionOptions());
-    await conn.beginTransaction();
-    try {
-      await throwsStatus(
-        () => createPayPeriod(conn, { start_date: "2026-10-05", end_date: "2026-10-12", pay_date: "2026-10-14" }),
-        400,
-        /end_date_not_start_plus_six/
-      );
-      await throwsStatus(
-        () => createPayPeriod(conn, { start_date: "2026-10-05", end_date: "2026-10-11", pay_date: "2026-10-10" }),
-        400,
-        /pay_date_before_end/
       );
     } finally {
       await conn.rollback();

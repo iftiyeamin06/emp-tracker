@@ -1,5 +1,26 @@
 // Shared polish primitives (inline styles only — no UI library in v1).
 
+// Muted CASH pill for cash-paid rows. Distinct but not loud.
+export function CashBadge() {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        background: "#f3f4f6",
+        color: "#4b5563",
+        border: "1px solid #e5e7eb",
+        borderRadius: 10,
+        padding: "1px 8px",
+        marginLeft: 6,
+        whiteSpace: "nowrap",
+      }}
+    >
+      CASH
+    </span>
+  );
+}
+
 export function Logo({ size = 40 }: { size?: number }) {
   return (
     <span

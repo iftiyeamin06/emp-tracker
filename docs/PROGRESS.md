@@ -87,8 +87,36 @@ Deferred to v2:
 Schema unchanged. All 16 tables remain. Unused tables stay — dropping them
 would require a new migration and gain nothing.
 
-## Known tradeoffs (accepted, revisit in hardening)
+## v1 UI complete — 2026-09-28
 
+- Login (branded card), Timecard Entry Grid (admin: view → click-edit →
+  save → submit), Owner Report (period picker, approve), Employees
+  (#/employees: roster + add form), New Period form on the grid.
+- Auth shell: hash routing, role guards (wrong role → Access denied, never a
+  login redirect), TopBar with logout, API status line DEV-only.
+- Tests: 28 client (vitest) + 48 server (`tsx --test`) passing, `tsc` clean
+  both sides. Full live flow verified: admin login → add employee → create
+  period → enter hours → save → submit → owner login → report → approve.
+- Bug found by tests: `loadPeriods` used `(selectId != null && find(...)) ??
+  fallback` — when `selectId` is undefined the left side is `false`, which
+  `??` does NOT skip, so the grid never loaded on first mount (older tests
+  passed only via cross-test DOM contamination). Fixed with a ternary +
+  comment; suite now passes in full isolation.
+
+## Known gaps (real, scheduled — not this turn)
+- No compensation-edit UI: pay rate / overtime status / classification can
+  only be set at hire (Add form). Corrections need a DB update + audit row
+  (done once for Test 1: EXEMPT → NON_EXEMPT, audited as
+  compensation.correct). When built, it gets its own task + tests.
+
+## Deferred to v1.1/v2 (cash controls — method + badge are v1, rest is not)
+
+- Cash handover log (`cash_payments` writes + UI)
+- Signed receipt upload (depends on attachment/storage infra)
+- Dashboard cash total and receipts-outstanding tile
+- Missing-receipt alert
+
+## Known tradeoffs (accepted, revisit in hardening)
 - No DB-level period lock: MySQL 8.4 + binary logging would require SUPER /
   `log_bin_trust_function_creators` for lock triggers, which the app user must
   not have. Locking is enforced by `withOpenPeriod()` (transaction +
