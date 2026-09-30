@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { del, get, post, put } from "../../api/client";
+import { del, get, patch, post, put } from "../../api/client";
 import { fmtDay } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
 import { Badge } from "../../components/ui/badge";
@@ -45,11 +45,12 @@ const selectClass =
 
 const emptyForm = { employee_number: "", full_name: "", hire_date: "", pay: "H", rate: "", overtime_status: "NON_EXEMPT", classification: "", payment_method: "DIRECT_DEPOSIT" };
 
-export default function EmployeesPage() {
+export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [rows, setRows] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,6 +63,7 @@ export default function EmployeesPage() {
 
   const closeModal = () => {
     setOpen(false);
+    setEditingId(null);
     setFormError("");
   };
 
@@ -168,7 +170,7 @@ export default function EmployeesPage() {
       if (!form.employee_number.trim() || !form.full_name.trim()) throw { status: 400, message: "number_name_required" };
       if (!/^\d{4}-\d{2}-\d{2}$/.test(form.hire_date)) throw { status: 400, message: "hire_date_invalid" };
       if (Number.isNaN(rate) || rate < 0) throw { status: 400, message: "rate_invalid" };
-      await post("/api/employees", {
+      const payload = {
         employee_number: form.employee_number.trim(),
         full_name: form.full_name.trim(),
         hire_date: form.hire_date,
@@ -179,17 +181,19 @@ export default function EmployeesPage() {
           overtime_status: form.overtime_status,
           classification: form.classification.trim() || undefined,
         },
-      });
+      };
+      if (editingId !== null) await patch(`/api/employees/${editingId}`, payload);
+      else await post("/api/employees", payload);
       setForm(emptyForm);
       closeModal();
       load();
-      setAddedFlash(true);
+      setAddedFlash(editingId === null);
       window.setTimeout(() => setAddedFlash(false), 3000);
     } catch (err: any) {
       setFormError(
         err?.status === 409
           ? "That employee number is already taken."
-          : "Couldn't add the employee. Check the fields and retry."
+          : "Couldn't save the employee. Check the fields and retry."
       );
     } finally {
       setSaving(false);
@@ -200,7 +204,7 @@ export default function EmployeesPage() {
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight">Employees</h2>
-        <Button onClick={() => { setOpen(true); setFormError(""); }}>Add Employee</Button>
+        {!readOnly && <Button onClick={() => { setOpen(true); setFormError(""); }}>Add Employee</Button>}
       </div>
       {rowError && <Notice title="Couldn't update" message={rowError} />}
       {addedFlash && <span className="text-sm text-green-600"> Added</span>}
@@ -218,7 +222,7 @@ export default function EmployeesPage() {
             className="max-h-[90vh] w-full max-w-xl overflow-y-auto"
           >
             <CardHeader>
-              <CardTitle>Add Employee</CardTitle>
+            <CardTitle>{editingId !== null ? "Edit Employee" : "Add Employee"}</CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={submit} className="space-y-4">
@@ -255,7 +259,7 @@ export default function EmployeesPage() {
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
                   <Button type="submit" disabled={saving} className="flex-1">
-                    {saving ? "Adding…" : "Add"}
+                    {saving ? "Saving…" : editingId !== null ? "Save changes" : "Add"}
                   </Button>
                 </div>
               </form>
@@ -305,17 +309,27 @@ export default function EmployeesPage() {
                     <TableCell className="whitespace-nowrap text-right">
                       <Button variant="ghost" size="sm" onClick={() => openProfile(r)}>
                         View
-                      </Button>{" "}
-                      {term ? (
-                        <Button variant="ghost" size="sm" onClick={() => changeTermination(r.id, null, `Rehire ${r.full_name}?`)}>
-                          Rehire
-                        </Button>
-                      ) : (
-                        <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => changeTermination(r.id, today(), `Terminate ${r.full_name} as of today?`)}>
-                          Terminate
-                        </Button>
-                      )}{" "}
-                      <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeEmployee(r.id, r.full_name)}>Delete</Button>
+                      </Button>
+                      {!readOnly && (
+                        <>
+                          {" "}
+                          <Button variant="ghost" size="sm" onClick={() => {
+                            setEditingId(r.id);
+                            setForm({ employee_number: r.employee_number, full_name: r.full_name, hire_date: String(r.hire_date).slice(0, 10), pay: r.compensation?.pay_type === "SALARY" ? "S" : "H", rate: r.compensation ? String(r.compensation.rate) : "0", overtime_status: r.compensation?.overtime_status ?? "NON_EXEMPT", classification: r.compensation?.classification ?? "", payment_method: r.payment_method });
+                            setFormError(""); setOpen(true);
+                          }}>Edit</Button>
+                          {term ? (
+                            <Button variant="ghost" size="sm" onClick={() => changeTermination(r.id, null, `Rehire ${r.full_name}?`)}>
+                              Rehire
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => changeTermination(r.id, today(), `Terminate ${r.full_name} as of today?`)}>
+                              Terminate
+                            </Button>
+                          )}{" "}
+                          <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeEmployee(r.id, r.full_name)}>Delete</Button>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

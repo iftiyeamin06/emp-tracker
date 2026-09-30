@@ -163,8 +163,7 @@ describe("sick leave ledger (integration, rolled back)", () => {
     }
   });
 
-  it("seed never double-grants an on-hire frontload", async () => {
-    const conn = await mysql.createConnection(connectionOptions());
+  it("seed never double-grants an on-hire frontload", async () => {    const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
       const num = "HD" + Math.floor(Math.random() * 1e6);
@@ -222,6 +221,33 @@ describe("sick leave ledger (integration, rolled back)", () => {
       } catch {
         /* already rolled back */
       }
+      await conn.end();
+    }
+  });
+
+  it("seed skips an employee whose frontload reason is from any other year", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const num = "FY" + Math.floor(Math.random() * 1e6);
+      const [r] = await conn.query(
+        "INSERT INTO employees (employee_number, full_name, hire_date) VALUES (?, 'Old Frontload', '2026-01-15')",
+        [num]
+      );
+      const eid = (r as any).insertId;
+      await conn.query(
+        "INSERT INTO leave_ledger (employee_id, leave_type, entry_type, hours, reason) VALUES (?, 'SICK_SAFE_PAID', 'accrual', 40, '2021 frontload')",
+        [eid]
+      );
+      await frontloadSick2026(conn);
+      const [rows] = await conn.query(
+        "SELECT COUNT(*) AS n, SUM(hours) AS h FROM leave_ledger WHERE employee_id=? AND leave_type='SICK_SAFE_PAID' AND entry_type='accrual'",
+        [eid]
+      );
+      assert.equal((rows as any[])[0].n, 1);
+      assert.equal(Number((rows as any[])[0].h), 40);
+    } finally {
+      await conn.rollback();
       await conn.end();
     }
   });

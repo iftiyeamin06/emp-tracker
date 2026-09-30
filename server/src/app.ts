@@ -5,6 +5,7 @@ import MySQLStoreFactory from "express-mysql-session";
 import { connectionOptions } from "./db/pool.js";
 import { errorHandler } from "./middleware/error.js";
 import { authRoutes, health } from "./modules/auth/auth.routes.js";
+import { alertsRoutes } from "./modules/alerts/alerts.routes.js";
 import { employeeRoutes } from "./modules/employees/employees.routes.js";
 import { payPeriodRoutes } from "./modules/pay-periods/payPeriods.routes.js";
 import { reportRoutes } from "./modules/reports/reports.routes.js";
@@ -40,6 +41,7 @@ export function createApp() {
 
   app.use("/api/health", health);
   app.use("/api/auth", authRoutes);
+  app.use("/api/dashboard", alertsRoutes);
   app.use("/api/employees", employeeRoutes);
   app.use("/api/pay-periods", payPeriodRoutes);
   app.use("/api/reports", reportRoutes);

@@ -310,4 +310,62 @@ describe("ReportPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Amy Example" }));
     expect(screen.queryByText("Sick: 32 of 40 hours remaining")).toBeNull();
   });
+
+  const alertsMock = (alerts: unknown) => (url: string) => {
+    if (url.includes("/api/dashboard")) return ok({ data: { alerts } });
+    return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("SUBMITTED") });
+  };
+
+  it("alerts card shows All clear when there are none", async () => {
+    (fetch as any).mockImplementation(alertsMock([]));
+    render(<ReportPage />);
+    await screen.findByText("Amy Example");
+    expect(await screen.findByText("Needs your attention")).toBeTruthy();
+    expect(screen.getByText("All clear")).toBeTruthy();
+  });
+
+  it("alerts card renders one row per alert, red first", async () => {
+    (fetch as any).mockImplementation(alertsMock([
+      { code: "overtime", severity: "amber", employee_id: 1, employee_name: "Amy Example", message: "5 OT hours this week", detail: { ot_hours: 5 } },
+      { code: "awaiting_approval", severity: "yellow", employee_id: null, employee_name: null, message: "Awaiting approval since 2026-10-05, 0 days ago", detail: {} },
+    ]));
+    render(<ReportPage />);
+    await screen.findByText("Amy Example");
+    expect(await screen.findByText(/5 OT hours this week/)).toBeTruthy();
+    const row = screen.getByText(/5 OT hours this week/).closest("li");
+    expect(row?.textContent).toContain("Amy Example");
+    expect(screen.getByText(/Awaiting approval since/)).toBeTruthy();
+  });
+
+  it("alerts card shows Checking... while loading", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/dashboard")) return new Promise(() => {}); // never resolves
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("SUBMITTED") });
+    });
+    render(<ReportPage />);
+    await screen.findByText("Amy Example");
+    expect(screen.getByText("Checking...")).toBeTruthy();
+  });
+
+  it("alerts card shows Unable to load alerts on error", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/dashboard")) return Promise.reject(new Error("down"));
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("SUBMITTED") });
+    });
+    render(<ReportPage />);
+    await screen.findByText("Amy Example");
+    expect(await screen.findByText("Unable to load alerts")).toBeTruthy();
+  });
+
+  it("alert dots match severity: red #dc2626, amber #d97706", async () => {
+    (fetch as any).mockImplementation(alertsMock([
+      { code: "overtime", severity: "amber", employee_id: 1, employee_name: "Amy Example", message: "5 OT hours this week", detail: {} },
+      { code: "leave_overdraw", severity: "red", employee_id: 1, employee_name: "Amy Example", message: "Sick leave overdraw by 8 hours", detail: {} },
+    ]));
+    render(<ReportPage />);
+    await screen.findByText("Amy Example");
+    const dot = (re: RegExp) => screen.getByText(re).closest("li")?.querySelector("span[aria-hidden]")?.className ?? "";
+    expect(dot(/5 OT hours this week/)).toContain("bg-[#d97706]");
+    expect(dot(/Sick leave overdraw by 8 hours/)).toContain("bg-[#dc2626]");
+  });
 });

@@ -95,6 +95,7 @@ interface LeaveData {
 }
 
 function LeaveDetail({ leave }: { leave: LeaveData }) {
+
   const bal = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
   // Usage rows carry the sick date in `note` (reason = work_date); fall back
   // to the ledger date for rows without a date-like note.
@@ -114,6 +115,73 @@ function LeaveDetail({ leave }: { leave: LeaveData }) {
         </ul>
       )}
     </div>
+  );
+}
+
+interface AlertItem {
+  code: string;
+  severity: "red" | "amber" | "yellow";
+  employee_id: number | null;
+  employee_name: string | null;
+  message: string;
+  detail: Record<string, unknown>;
+}
+
+const SEVERITY_DOT: Record<AlertItem["severity"], string> = {
+  red: "bg-[#dc2626]",
+  amber: "bg-[#d97706]",
+  yellow: "bg-[#eab308]",
+};
+
+const SEVERITY_RANK: Record<AlertItem["severity"], number> = { red: 0, amber: 1, yellow: 2 };
+
+// Read-only alerts card above the weekly table. Refetches when the selected
+// period changes; never blocks the page (muted fallback on error).
+function AlertsCard({ periodId }: { periodId: number }) {
+  const [alerts, setAlerts] = useState<AlertItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setAlerts(null);
+    setFailed(false);
+    get<{ data: { alerts: AlertItem[] } }>(`/api/dashboard/${periodId}/alerts`)
+      .then((j) => {
+        if (live) setAlerts(j.data?.alerts ?? []);
+      })
+      .catch(() => {
+        if (live) setFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [periodId]);
+
+  const sorted = [...(alerts ?? [])].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+
+  return (
+    <Card className="p-4">
+      <h3 className="mb-2 text-sm font-semibold">Needs your attention</h3>
+      {failed ? (
+        <p className="text-sm text-muted-foreground">Unable to load alerts</p>
+      ) : alerts === null ? (
+        <p className="text-sm text-muted-foreground">Checking...</p>
+      ) : sorted.length === 0 ? (
+        <p className="text-sm text-muted-foreground">All clear</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {sorted.map((a, i) => (
+            <li key={`${a.code}-${a.employee_id ?? "period"}-${i}`} className="flex items-center gap-2 text-sm">
+              <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[a.severity]}`} />
+              <span>
+                {a.message}
+                {a.employee_name ? ` — ${a.employee_name}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -582,6 +650,7 @@ export default function ReportPage() {
       {loading && <Skeleton rows={5} cols={8} />}
       {error && <Notice title="Something didn't load" message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
       {showKpis && <KpiCards rows={displayRows} />}
+      {mode === "weekly" && periodId != null && <AlertsCard periodId={periodId} />}
       {mode === "monthly" && !loading && !error && mrows.length === 0 && (
         <EmptyState title="No data for this month" hint="Pick a month with approved or open weeks." />
       )}

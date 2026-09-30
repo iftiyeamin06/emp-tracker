@@ -85,7 +85,7 @@ export default function App() {
         <main className="p-6">
           {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
-          {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : <p>Access denied.</p>)}
+          {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : me.role === "OWNER" ? <EmployeesPage readOnly /> : <p>Access denied.</p>)}
         </main>
       </div>
     </div>

@@ -98,4 +98,24 @@ describe("App routing", () => {
     const nav2 = await screen.findByText("Report", { selector: "nav a" });
     expect(nav2).toBeTruthy();
   });
+
+  it("owner visiting #/employees sees the roster read-only (no mutations)", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/employees")) {
+        return ok({ data: [
+          { id: 1, employee_number: "E1", full_name: "Amy Example", hire_date: "2026-09-01", termination_date: null, payment_method: "DIRECT_DEPOSIT", compensation: null },
+        ] });
+      }
+      if (url.includes("/api/auth/me")) return ok({ user: { email: "o@x.com", role: "OWNER" } });
+      return fail(404);
+    });
+    window.location.hash = "#/employees";
+    render(<App />);
+    expect(await screen.findByText("Amy Example")).toBeTruthy();
+    expect(screen.queryByText("Access denied.")).toBeNull();
+    expect(screen.queryByText("Add Employee")).toBeNull();
+    expect(screen.queryByText("Terminate")).toBeNull();
+    expect(screen.queryByText("Delete")).toBeNull();
+    expect(screen.getByText("View")).toBeTruthy();
+  });
 });
