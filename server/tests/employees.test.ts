@@ -29,6 +29,9 @@ describe("employees (integration, rolled back)", () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
+      // Baseline audit id: legacy audit_log rows (pre-wipe ghosts) can share
+      // numeric entity ids with new rows, so scope the assertion to this txn.
+      const [[mark]] = (await conn.query("SELECT COALESCE(MAX(id), 0) AS m FROM audit_log")) as any[];
       const { employee, compensation } = await createEmployee(conn, valid("RT1"));
       assert.equal(employee.employee_number, "RT1");
       assert.equal(employee.payment_method, "CASH"); // persists as stored
@@ -43,8 +46,8 @@ describe("employees (integration, rolled back)", () => {
       assert.ok(list.some((r) => r.employee_number === "RT1"));
       assert.equal(list.find((r) => r.employee_number === "RT1")?.payment_method, "CASH");
       const [audit] = await conn.query(
-        "SELECT action, actor_user_id FROM audit_log WHERE entity_table IN ('employees','employee_compensation') AND entity_id IN (?,?) ORDER BY id",
-        [employee.id, compensation.id]
+        "SELECT action, actor_user_id FROM audit_log WHERE id > ? AND entity_table IN ('employees','employee_compensation') AND entity_id IN (?,?) ORDER BY id",
+        [mark.m, employee.id, compensation.id]
       );
       assert.deepEqual(
         (audit as any[]).map((r) => [r.action, r.actor_user_id]),

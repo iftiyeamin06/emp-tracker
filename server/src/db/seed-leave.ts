@@ -2,10 +2,11 @@ import "dotenv/config";
 import mysql from "mysql2/promise";
 import { connectionOptions, pool } from "./pool.js";
 
-// 2026 sick frontload: +40 SICK_SAFE_PAID accrual per active employee.
-// Skips anyone already frontloaded for 2026 — either by this seed or by the
-// on-hire auto-frontload (both reasons contain "2026 frontload"). Safe to
-// re-run. No rollover/reset here by design; no proration (flat +40 v1).
+// 2026 sick frontload: +40 SICK_SAFE_PAID accrual per active employee who
+// has none yet. Skip is reason-agnostic — any existing sick accrual counts
+// (seed rows AND on-hire auto-frontloads from any year), so re-running can
+// never stack a second +40 on anyone. Safe to re-run. No rollover/reset here
+// by design; no proration (flat +40 v1).
 export async function frontloadSick2026(
   conn: mysql.PoolConnection | mysql.Connection
 ): Promise<number> {
@@ -17,7 +18,6 @@ export async function frontloadSick2026(
           SELECT employee_id FROM leave_ledger
           WHERE leave_type = 'SICK_SAFE_PAID'
             AND entry_type = 'accrual'
-            AND reason LIKE '%2026 frontload%'
         )`
   );
   const ids = (rows as any[]).map((r) => r.id);

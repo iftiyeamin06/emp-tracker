@@ -169,3 +169,11 @@ v1 is done when ALL of these are true:
 - [ ] The owner has logged in and used it at least once
 
 Until all six are checked, v1 is not done. No new features.
+
+---
+
+## 11. Known gotchas
+
+- MySQL returns ENUM values in their declared case (e.g., `ACCRUAL`, not
+  `accrual`). Any string comparison against an ENUM must be case-insensitive
+  or match the declared case exactly.

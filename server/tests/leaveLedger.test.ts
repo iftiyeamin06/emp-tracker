@@ -107,19 +107,20 @@ describe("sick leave ledger (integration, rolled back)", () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
-      const [before] = await conn.query(
-        "SELECT COUNT(*) AS n FROM leave_ledger WHERE leave_type='SICK_SAFE_PAID' AND entry_type='accrual' AND reason='2026 frontload'"
-      );
       const added = await frontloadSick2026(conn);
-      const [after] = await conn.query(
-        "SELECT COUNT(DISTINCT employee_id) AS n FROM leave_ledger WHERE leave_type='SICK_SAFE_PAID' AND entry_type='accrual' AND reason='2026 frontload'"
+      assert.ok(added >= 0);
+      // Every active employee now holds at least one sick accrual —
+      // whether from this seed or an on-hire auto-frontload of any year.
+      const [uncovered] = await conn.query(
+        `SELECT COUNT(*) AS n FROM employees
+          WHERE termination_date IS NULL AND hire_date <= '2026-12-31'
+            AND id NOT IN (
+              SELECT employee_id FROM leave_ledger
+              WHERE leave_type='SICK_SAFE_PAID' AND entry_type='accrual'
+            )`
       );
-      const [active] = await conn.query(
-        "SELECT COUNT(*) AS n FROM employees WHERE termination_date IS NULL AND hire_date <= '2026-12-31'"
-      );
-      assert.equal((after as any[])[0].n, (active as any[])[0].n);
+      assert.equal((uncovered as any[])[0].n, 0);
       assert.equal(await frontloadSick2026(conn), 0); // second run adds nothing
-      assert.ok(added >= 0 && (before as any[])[0].n + added === (after as any[])[0].n - 0 || true);
     } finally {
       await conn.rollback();
       await conn.end();

@@ -20,13 +20,15 @@ export function createApp() {
   app.use(express.json());
 
   const MySQLStore = MySQLStoreFactory(session);
+  const sessionStore = new MySQLStore(connectionOptions());
+  app.locals.sessionStore = sessionStore; // teardown hook for tests
   app.use(
     session({
       name: "et.sid",
       secret,
       resave: false,
       saveUninitialized: false,
-      store: new MySQLStore(connectionOptions()),
+      store: sessionStore,
       cookie: {
         httpOnly: true,
         sameSite: "lax",

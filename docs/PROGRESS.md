@@ -155,7 +155,8 @@ would require a new migration and gain nothing.
 - Auto-frontload on hire (no manual step): `createEmployee` inserts +40
   `SICK_SAFE_PAID` accrual (reason `Initial sick frontload on hire (YYYY
   frontload)`, `created_by` = admin, same txn) + `leave.create` audit row.
-  Seed skip is `LIKE '%2026 frontload%'` so it never double-grants a hire.
+  Seed skip is reason-agnostic (any sick accrual blocks a re-grant), so it
+  never stacks a second +40 on anyone — including pre-2026 hires.
 - Delete rule adjusted: untouched accruals are not history (removed with the
   employee); timecards and leave usage still 409 → terminate instead.
 - Tests: 69 server (ledger: insert/delete/retype/balance-sum/frontload,
