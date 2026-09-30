@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { del, get, post, put } from "../../api/client";
-import { btnPrimary, btnSecondary, card, font, hoverCss, table, td, th } from "../../components/theme";
+import { fmtDay } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
-
-// Local calendar day (matches the server; never slice the UTC part of ISO).
-const cal = (v: unknown): string => {
-  const d = new Date(v as any);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
 interface Employee {
   id: number;
@@ -19,6 +18,19 @@ interface Employee {
   compensation: { pay_type: string; rate: unknown; overtime_status: string; classification: string | null } | null;
 }
 
+interface LedgerRow {
+  date: string;
+  leave_type: string;
+  entry_type: string;
+  hours: number | string;
+  note: string | null;
+}
+
+interface LeaveData {
+  balances: Record<string, number>;
+  ledger: LedgerRow[];
+}
+
 const PAY_LABELS: Record<string, string> = { DIRECT_DEPOSIT: "Direct Deposit", CHECK: "Check", CASH: "Cash" };
 
 const money = (rate: unknown, payType: string): string => {
@@ -26,48 +38,10 @@ const money = (rate: unknown, payType: string): string => {
   return payType === "SALARY" ? `SALARY $${formatted}/wk` : `HOURLY $${formatted}`;
 };
 
-const input: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  margin: "4px 0 0",
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  fontSize: 14,
-};
-
-const fieldLabel: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 500, color: "#6b7280" };
-
-const ghostDanger: React.CSSProperties = {
-  background: "transparent",
-  border: 0,
-  color: "#dc2626",
-  cursor: "pointer",
-  fontSize: 14,
-  padding: "6px 8px",
-  borderRadius: 6,
-};
-
-const ghost: React.CSSProperties = {
-  background: "transparent",
-  border: 0,
-  color: "#2563eb",
-  cursor: "pointer",
-  fontSize: 14,
-  padding: "6px 8px",
-  borderRadius: 6,
-};
-
-const pill = (bg: string, fg: string): React.CSSProperties => ({
-  fontSize: 12,
-  fontWeight: 600,
-  background: bg,
-  color: fg,
-  borderRadius: 10,
-  padding: "2px 10px",
-  whiteSpace: "nowrap",
-});
+// Native select dressed like the shadcn Input. A Radix Select renders no
+// native <select>, which would break the existing label/change tests.
+const selectClass =
+  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const emptyForm = { employee_number: "", full_name: "", hire_date: "", pay: "H", rate: "", overtime_status: "NON_EXEMPT", classification: "", payment_method: "DIRECT_DEPOSIT" };
 
@@ -81,20 +55,45 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [addedFlash, setAddedFlash] = useState(false);
   const [rowError, setRowError] = useState("");
+  const [profile, setProfile] = useState<Employee | null>(null);
+  const [leave, setLeave] = useState<LeaveData | null>(null);
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
 
   const closeModal = () => {
     setOpen(false);
     setFormError("");
   };
 
+  const closeProfile = () => setProfile(null);
+
+  const openProfile = (emp: Employee) => {
+    setProfile(emp);
+    setLeave(null);
+    setLeaveError("");
+    setLeaveLoading(true);
+    get<{ data: LeaveData }>(`/api/employees/${emp.id}/leave`)
+      .then((j) => {
+        setLeave(j.data);
+        setLeaveLoading(false);
+      })
+      .catch(() => {
+        setLeaveError("Could not load leave history.");
+        setLeaveLoading(false);
+      });
+  };
+
   useEffect(() => {
-    if (!open) return;
+    if (!open && !profile) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeModal();
+      if (e.key === "Escape") {
+        closeModal();
+        closeProfile();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open ]);
+  }, [open, profile]);
 
   const load = () => {
     setLoading(true);
@@ -154,9 +153,9 @@ export default function EmployeesPage() {
     name: keyof typeof emptyForm | "pay_type" | "overtime" | "payment" | "rate" | "class",
     control: React.ReactNode
   ) => (
-    <label style={fieldLabel}>
+    <label key={String(name)} className="block text-xs font-medium text-muted-foreground">
       {label}
-      {control}
+      <span className="mt-1 block">{control}</span>
     </label>
   );
 
@@ -198,74 +197,70 @@ export default function EmployeesPage() {
   };
 
   return (
-    <section>
-      <style>{hoverCss}</style>
-      <h2 style={{ ...font.section, margin: "0 0 12px" }}>Employees</h2>
-      <button style={btnPrimary} onClick={() => { setOpen(true); setFormError(""); }}>Add Employee</button>
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold tracking-tight">Employees</h2>
+        <Button onClick={() => { setOpen(true); setFormError(""); }}>Add Employee</Button>
+      </div>
       {rowError && <Notice title="Couldn't update" message={rowError} />}
-      {addedFlash && <span style={{ color: "green" }}> Added</span>}
+      {addedFlash && <span className="text-sm text-green-600"> Added</span>}
       {open && (
         <div
           role="presentation"
           onClick={closeModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(17,24,39,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            zIndex: 50,
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
-          <div
+          <Card
             role="dialog"
             aria-modal="true"
             aria-label="Add Employee"
             onClick={(e) => e.stopPropagation()}
-            style={{ ...card, width: "100%", maxWidth: 560, padding: 24, maxHeight: "90vh", overflowY: "auto" }}
+            className="max-h-[90vh] w-full max-w-xl overflow-y-auto"
           >
-            <h3 style={{ ...font.section, margin: "0 0 16px" }}>Add Employee</h3>
-            <form onSubmit={submit}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {field("Employee number", "employee_number",
-                  <input style={input} id="f-employee-number" aria-label="Employee number" placeholder="e.g. E042" value={form.employee_number} onChange={set("employee_number")} />)}
-                {field("Full name", "full_name",
-                  <input style={input} id="f-full-name" aria-label="Full name" placeholder="e.g. Jane Doe" value={form.full_name} onChange={set("full_name")} />)}
-                {field("Hire date", "hire_date",
-                  <input style={input} id="f-hire-date" aria-label="Hire date" type="date" value={form.hire_date} onChange={set("hire_date")} />)}
-                {field("Pay type", "pay_type",
-                  <select style={input} id="f-pay-type" aria-label="Pay type" value={form.pay} onChange={set("pay")}>
-                    <option value="H">Hourly (H)</option>
-                    <option value="S">Salary (S)</option>
-                  </select>)}
-                {field(form.pay === "H" ? "Hourly rate" : "Weekly salary", "rate",
-                  <input style={input} id="f-rate" aria-label="Rate" placeholder={form.pay === "H" ? "e.g. 18.50" : "e.g. 900.00"} value={form.rate} onChange={set("rate")} inputMode="decimal" />)}
-                {field("Overtime status", "overtime",
-                  <select style={input} id="f-overtime-status" aria-label="Overtime status" value={form.overtime_status} onChange={set("overtime_status")}>
-                    <option value="NON_EXEMPT">Non-exempt</option>
-                    <option value="EXEMPT">Exempt</option>
-                    <option value="REVIEW">Needs review</option>
-                  </select>)}
-                {field("Payment method", "payment",
-                  <select style={input} id="f-payment-method" aria-label="Payment method" value={form.payment_method} onChange={set("payment_method")}>
-                    <option value="DIRECT_DEPOSIT">Direct Deposit</option>
-                    <option value="CHECK">Check</option>
-                    <option value="CASH">Cash</option>
-                  </select>)}
-                {field("Classification", "class",
-                  <input style={input} id="f-classification" aria-label="Classification" placeholder="e.g. Crew A (optional)" value={form.classification} onChange={set("classification")} />)}
-              </div>
-              {formError && <Notice title="Couldn't add the employee" message={formError} />}
-              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <button type="button" style={btnSecondary} onClick={closeModal}>Cancel</button>
-                <button type="submit" disabled={saving} style={{ ...btnPrimary, flex: 1, justifyContent: "center", ...(saving ? { opacity: 0.45 } : {}) }}>
-                  {saving ? "Adding…" : "Add"}
-                </button>
-              </div>
-            </form>
-          </div>
+            <CardHeader>
+              <CardTitle>Add Employee</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={submit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {field("Employee number", "employee_number",
+                    <Input id="f-employee-number" aria-label="Employee number" placeholder="e.g. E042" value={form.employee_number} onChange={set("employee_number")} />)}
+                  {field("Full name", "full_name",
+                    <Input id="f-full-name" aria-label="Full name" placeholder="e.g. Jane Doe" value={form.full_name} onChange={set("full_name")} />)}
+                  {field("Hire date", "hire_date",
+                    <Input id="f-hire-date" aria-label="Hire date" type="date" value={form.hire_date} onChange={set("hire_date")} />)}
+                  {field("Pay type", "pay_type",
+                    <select className={selectClass} id="f-pay-type" aria-label="Pay type" value={form.pay} onChange={set("pay")}>
+                      <option value="H">Hourly (H)</option>
+                      <option value="S">Salary (S)</option>
+                    </select>)}
+                  {field(form.pay === "H" ? "Hourly rate" : "Weekly salary", "rate",
+                    <Input id="f-rate" aria-label="Rate" placeholder={form.pay === "H" ? "e.g. 18.50" : "e.g. 900.00"} value={form.rate} onChange={set("rate")} inputMode="decimal" />)}
+                  {field("Overtime status", "overtime",
+                    <select className={selectClass} id="f-overtime-status" aria-label="Overtime status" value={form.overtime_status} onChange={set("overtime_status")}>
+                      <option value="NON_EXEMPT">Non-exempt</option>
+                      <option value="EXEMPT">Exempt</option>
+                      <option value="REVIEW">Needs review</option>
+                    </select>)}
+                  {field("Payment method", "payment",
+                    <select className={selectClass} id="f-payment-method" aria-label="Payment method" value={form.payment_method} onChange={set("payment_method")}>
+                      <option value="DIRECT_DEPOSIT">Direct Deposit</option>
+                      <option value="CHECK">Check</option>
+                      <option value="CASH">Cash</option>
+                    </select>)}
+                  {field("Classification", "class",
+                    <Input id="f-classification" aria-label="Classification" placeholder="e.g. Crew A (optional)" value={form.classification} onChange={set("classification")} />)}
+                </div>
+                {formError && <Notice title="Couldn't add the employee" message={formError} />}
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
+                  <Button type="submit" disabled={saving} className="flex-1">
+                    {saving ? "Adding…" : "Add"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       )}
       {loading && <Skeleton rows={5} cols={4} />}
@@ -274,56 +269,124 @@ export default function EmployeesPage() {
         <EmptyState title="No employees yet" hint="Add your first employee to get started." />
       )}
       {!loading && !error && rows.length > 0 && (
-        <div style={{ ...card, overflowX: "auto" }}>
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={th}>Emp #</th>
-              <th style={th}>Name</th>
-              <th style={th}>Hire date</th>
-              <th style={th}>Pay</th>
-              <th style={th}>Payment</th>
-              <th style={th}>Overtime</th>
-              <th style={th}>Status</th>
-              <th style={th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-                const term = r.termination_date ? cal(r.termination_date) : null;
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Emp #</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Hire date</TableHead>
+                <TableHead>Pay</TableHead>
+                <TableHead>Payment</TableHead>
+                <TableHead>Overtime</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                const term = r.termination_date ? fmtDay(r.termination_date) : null;
                 return (
-                <tr key={r.id} className="tc-row" style={i % 2 === 1 ? { background: "#f8fafc" } : undefined}>
-                  <td style={td}>{r.employee_number}</td>
-                  <td style={td}>
-                    {r.full_name}
-                    {r.payment_method === "CASH" && <CashBadge />}
-                  </td>
-                  <td style={td}>{cal(r.hire_date)}</td>
-                  <td style={td}>{r.compensation ? money(r.compensation.rate, r.compensation.pay_type) : "—"}</td>
-                  <td style={td}>{PAY_LABELS[r.payment_method] ?? r.payment_method}</td>
-                  <td style={td}>{r.compensation ? r.compensation.overtime_status : "—"}</td>
-                  <td style={td}>
-                    {term
-                      ? <span style={pill("#f3f4f6", "#4b5563")}>Terminated {term}</span>
-                      : <span style={pill("#dcfce7", "#166534")}>Active</span>}
-                  </td>
-                  <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                    {term ? (
-                      <button style={ghost} onClick={() => changeTermination(r.id, null, `Rehire ${r.full_name}?`)}>
-                        Rehire
-                      </button>
-                    ) : (
-                      <button style={ghostDanger} onClick={() => changeTermination(r.id, today(), `Terminate ${r.full_name} as of today?`)}>
-                        Terminate
-                      </button>
-                    )}{" "}
-                    <button style={ghostDanger} onClick={() => removeEmployee(r.id, r.full_name)}>Delete</button>
-                  </td>
-                </tr>
+                  <TableRow key={r.id} className="odd:bg-muted/50">
+                    <TableCell>{r.employee_number}</TableCell>
+                    <TableCell>
+                      {r.full_name}
+                      {r.payment_method === "CASH" && <CashBadge />}
+                    </TableCell>
+                    <TableCell>{fmtDay(r.hire_date)}</TableCell>
+                    <TableCell>{r.compensation ? money(r.compensation.rate, r.compensation.pay_type) : "—"}</TableCell>
+                    <TableCell>{PAY_LABELS[r.payment_method] ?? r.payment_method}</TableCell>
+                    <TableCell>{r.compensation ? r.compensation.overtime_status : "—"}</TableCell>
+                    <TableCell>
+                      {term
+                        ? <Badge variant="secondary">Terminated {term}</Badge>
+                        : <Badge className="border-transparent bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900 dark:text-green-100">Active</Badge>}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-right">
+                      <Button variant="ghost" size="sm" onClick={() => openProfile(r)}>
+                        View
+                      </Button>{" "}
+                      {term ? (
+                        <Button variant="ghost" size="sm" onClick={() => changeTermination(r.id, null, `Rehire ${r.full_name}?`)}>
+                          Rehire
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => changeTermination(r.id, today(), `Terminate ${r.full_name} as of today?`)}>
+                          Terminate
+                        </Button>
+                      )}{" "}
+                      <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeEmployee(r.id, r.full_name)}>Delete</Button>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-          </tbody>
-        </table>
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+      {profile && (
+        <div
+          role="presentation"
+          onClick={closeProfile}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${profile.full_name} profile`}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[90vh] w-full max-w-xl overflow-y-auto"
+          >
+            <CardHeader>
+              <CardTitle>{profile.full_name}</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {profile.employee_number} · Hired {fmtDay(profile.hire_date)}
+                {profile.compensation ? ` · ${money(profile.compensation.rate, profile.compensation.pay_type)}` : ""}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Card className="bg-muted/40 p-4 shadow-none">
+                <h4 className="mb-2 text-sm font-medium">Leave Balances</h4>
+                {leaveLoading && <span className="text-sm">Loading…</span>}
+                {leaveError && <Notice title="Couldn't load leave" message={leaveError} />}
+                {leave && (
+                  <span className="text-sm">
+                    Sick: {Number(leave.balances["SICK_SAFE_PAID"] ?? 0)} of 40 hours remaining
+                  </span>
+                )}
+              </Card>
+              <h4 className="text-sm font-medium">Leave History</h4>
+              {leaveLoading && <span className="text-sm">Loading…</span>}
+              {leave && leave.ledger.length === 0 && (
+                <span className="text-sm text-muted-foreground">No leave entries yet.</span>
+              )}
+              {leave && leave.ledger.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Hours</TableHead>
+                      <TableHead>Note</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {leave.ledger.map((l, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{fmtDay(l.date)}</TableCell>
+                        <TableCell>{l.leave_type}</TableCell>
+                        <TableCell>{Number(l.hours)}</TableCell>
+                        <TableCell>{l.note ?? "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              <Button type="button" variant="outline" className="w-full" onClick={closeProfile}>
+                Close
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
     </section>
