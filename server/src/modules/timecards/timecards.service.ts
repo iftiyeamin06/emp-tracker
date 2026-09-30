@@ -176,6 +176,22 @@ export async function saveGrid(
         [values]
       );
     }
+    // Sick-leave ledger sync (same txn): the ledger has no per-date column,
+    // so the key is (employee, SICK_SAFE_PAID, usage, period). Full-sync:
+    // delete this period's usage rows, then insert one row per sick day
+    // with hours > 0. Removing a sick day (or retyping it) deletes its row.
+    await conn.query(
+      "DELETE FROM leave_ledger WHERE employee_id = ? AND leave_type = 'SICK_SAFE_PAID' AND entry_type = 'usage' AND pay_period_id = ?",
+      [r.employee_id, period.id]
+    );
+    for (const d of r.days) {
+      if (TO_DB[d.day_type] === "SICK_SAFE_PAID" && Number(d.hours) > 0) {
+        await conn.query(
+          "INSERT INTO leave_ledger (employee_id, leave_type, entry_type, hours, pay_period_id, reason, created_by) VALUES (?, 'SICK_SAFE_PAID', 'usage', ?, ?, ?, ?)",
+          [r.employee_id, -Number(d.hours), period.id, d.work_date, actorId]
+        );
+      }
+    }
     const [[after]] = (await conn.query("SELECT * FROM timecard_entries WHERE id = ?", [entryId])) as any[];
     await writeAudit(conn, {
       actorUserId: actorId,

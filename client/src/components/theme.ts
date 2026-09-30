@@ -2,12 +2,12 @@ import type React from "react";
 
 // Design tokens — single source for the v1 look. Inline styles only.
 export const c = {
-  primary: "#2563eb",
-  bg: "#f9fafb",
-  card: "#ffffff",
-  border: "#e5e7eb",
-  muted: "#6b7280",
-  ink: "#111827",
+  primary: "var(--color-primary)",
+  bg: "var(--color-bg)",
+  card: "var(--color-card)",
+  border: "var(--color-border)",
+  muted: "var(--color-muted)",
+  ink: "var(--color-ink)",
   danger: "#dc2626",
   success: "#16a34a",
   warning: "#d97706",

@@ -1,0 +1,106 @@
+:root {
+  color-scheme: light;
+  --color-primary: #2563eb;
+  --color-bg: #f9fafb;
+  --color-card: #ffffff;
+  --color-border: #e5e7eb;
+  --color-muted: #6b7280;
+  --color-ink: #111827;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-primary: #60a5fa;
+  --color-bg: #0f172a;
+  --color-card: #1e293b;
+  --color-border: #334155;
+  --color-muted: #94a3b8;
+  --color-ink: #f8fafc;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --bg-card: #1e293b;
+  --border-subtle: #334155;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background-color: #111827 !important;
+  border-color: #4b5563 !important;
+  color: #f3f4f6 !important;
+}
+
+:root[data-theme="dark"] table {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] .timecard-table td,
+:root[data-theme="dark"] .report-table td,
+:root[data-theme="dark"] .report-totals-row {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] .timecard-table th,
+:root[data-theme="dark"] .report-table th {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme="dark"] .kpi-card {
+  background: var(--bg-card) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+:root[data-theme="dark"] .kpi-card-value {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] .kpi-card > div:first-child {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme="dark"] .kpi-card-value-alert {
+  background: #78350f !important;
+}
+
+:root[data-theme="dark"] tbody tr {
+  background-color: #1f2937 !important;
+}
+
+:root[data-theme="dark"] tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:root[data-theme="dark"] tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:root[data-theme="dark"] tfoot,
+:root[data-theme="dark"] tfoot tr {
+  background-color: #273449 !important;
+  color: #f3f4f6 !important;
+}
+
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] td {
+  border-color: var(--border-subtle) !important;
+}
+
+:root[data-theme="dark"] th {
+  background: #273449 !important;
+}
+
+:root[data-theme="dark"] button:not([style*="background: rgb(37, 99, 235)"]) {
+  color: inherit;
+}

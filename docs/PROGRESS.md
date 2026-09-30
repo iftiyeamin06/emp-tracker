@@ -108,6 +108,11 @@ would require a new migration and gain nothing.
   only be set at hire (Add form). Corrections need a DB update + audit row
   (done once for Test 1: EXEMPT → NON_EXEMPT, audited as
   compensation.correct). When built, it gets its own task + tests.
+- No January 1 reset job yet. Employees hired in 2026 have their +40 for
+  2026; they will need a new accrual for 2027 when we build the reset job.
+- No proration for mid-year hires (deliberate v1 choice; confirm with CPA).
+- Termination does not zero remaining balance (by design — payout rules
+  are company policy).
 
 ## Deferred to v1.1/v2 (cash controls — method + badge are v1, rest is not)
 
@@ -133,3 +138,37 @@ would require a new migration and gain nothing.
   both ways so payloads round-trip), and the API uses `reimbursement_amount`
   while the column is `reimb_amount`. Non-v1 day types in legacy rows pass
   through untouched on reads.
+
+## Sick leave ledger (frontload) — DONE 2026-09-30
+
+- `PUT /api/timecards/:periodId` syncs `leave_ledger` in the same txn:
+  key is (employee, SICK_SAFE_PAID, usage, period) — the ledger has no
+  per-date column, so full-sync per period (delete + re-insert per sick day
+  with hours > 0, reason = work_date). Removing/retyping a SICK day deletes it.
+- `GET /api/employees/:id/leave` returns `{ balances, ledger }` from
+  `leave_balances` + `leave_ledger` (date = created_at, note = reason).
+- Seed: `npm run seed:leave` frontloaded +40 `SICK_SAFE_PAID` accrual
+  (reason `2026 frontload`, pay_period_id NULL) for all 7 active employees;
+  re-run is a no-op. No rollover/reset job (deferred per task).
+- Employees page: "View" opens a profile drawer with Leave Balances card
+  (`Sick: X of 40 hours remaining`) + Leave History table (Date|Type|Hours|Note).
+- Auto-frontload on hire (no manual step): `createEmployee` inserts +40
+  `SICK_SAFE_PAID` accrual (reason `Initial sick frontload on hire (YYYY
+  frontload)`, `created_by` = admin, same txn) + `leave.create` audit row.
+  Seed skip is `LIKE '%2026 frontload%'` so it never double-grants a hire.
+- Delete rule adjusted: untouched accruals are not history (removed with the
+  employee); timecards and leave usage still 409 → terminate instead.
+- Tests: 69 server (ledger: insert/delete/retype/balance-sum/frontload,
+  hire-accrual, rollback, no-double-grant, usage-blocks-delete) + 66 client
+  pass, `tsc` clean both sides. Live-verified: hire → 40, sick day → usage
+  row, delete → 200/404 + audit.
+
+## Owner sick-leave visibility — DONE 2026-09-30
+
+- Owner can't open #/employees (ADMIN-only), so the Report got its own
+  drill-down: employee name is a toggle that lazy-fetches
+  `GET /api/employees/:id/leave` (auth-only, no new route) and shows
+  `Sick: X of 40 hours remaining` + usage dates (ledger `note` = sick date).
+  Works in weekly + monthly tables; no extra fetch on load.
+- Tests: 2 existing week-accordion queries disambiguated (▶/▼ exact names);
+  1 new drill-down test. Client 66/66, server 69/69, `tsc` clean.

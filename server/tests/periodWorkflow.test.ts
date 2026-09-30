@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import mysql from "mysql2/promise";
 import { connectionOptions } from "../src/db/pool.js";
 import { assertPeriodOpen } from "../src/lib/periodLock.js";
-import { approvePeriod, createPayPeriod, submitPeriod } from "../src/modules/pay-periods/payPeriods.service.js";
+import { approvePeriod, createPayPeriod, reopenPeriod, submitPeriod } from "../src/modules/pay-periods/payPeriods.service.js";
 
 const throwsStatus = async (fn: () => Promise<unknown>, status: number, pattern: RegExp) => {
   try {
@@ -108,12 +108,72 @@ describe("period workflow (integration, rolled back)", () => {
   it("after approve, entry writes reject with 423", async () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
-    const actor = await realActor(conn);
     try {
+      const actor = await realActor(conn);
       const created = await freshPeriod(conn);
       await submitPeriod(conn, actor, undefined, created.id as number);
       await approvePeriod(conn, actor, undefined, created.id as number);
       await throwsStatus(() => assertPeriodOpen(conn, created.id as number), 423, /approved_locked/);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("reopen with reason on APPROVED returns it to OPEN + audit", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const actor = await realActor(conn);
+      const created = await freshPeriod(conn);
+      await submitPeriod(conn, actor, undefined, created.id as number);
+      await approvePeriod(conn, actor, undefined, created.id as number);
+      const period = await reopenPeriod(conn, actor, undefined, created.id as number, "payroll error");
+      assert.equal(period.status, "OPEN");
+      assert.equal(period.approved_by, null);
+      assert.equal(period.approved_at, null);
+      const [audit] = await conn.query(
+        "SELECT action, before_json, after_json, reason FROM audit_log WHERE entity_table='pay_periods' AND entity_id=? ORDER BY id DESC LIMIT 1",
+        [period.id]
+      );
+      const r = (audit as any[])[0];
+      const asObj = (v: any) => (typeof v === "string" ? JSON.parse(v) : v);
+      assert.equal(r.action, "reopen");
+      assert.equal(asObj(r.before_json).status, "APPROVED");
+      assert.deepEqual(asObj(r.after_json), { status: "OPEN" });
+      assert.equal(r.reason, "payroll error");
+      await assertPeriodOpen(conn, created.id as number); // editable again
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("reopen without reason is 400; on OPEN or SUBMITTED is 409", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const actor = await realActor(conn);
+      const created = await freshPeriod(conn);
+      await submitPeriod(conn, actor, undefined, created.id as number);
+      await approvePeriod(conn, actor, undefined, created.id as number);
+      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "  "), 400, /reopen_reason_required/);
+      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, undefined), 400, /reopen_reason_required/);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("reopen on OPEN or SUBMITTED is 409", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const actor = await realActor(conn);
+      const created = await freshPeriod(conn);
+      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "x"), 409, /period_not_approved/);
+      await submitPeriod(conn, actor, undefined, created.id as number);
+      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "x"), 409, /period_not_approved/);
     } finally {
       await conn.rollback();
       await conn.end();

@@ -48,7 +48,7 @@ describe("monthly report (integration, rolled back)", () => {
       assert.equal(rep.rows.length, 1);
       assert.deepEqual(rep.rows[0], {
         employee_id: eid, name: "Monthly MR1", cash: false, reg: 40, ot: 0, hol: 0, sick: 0, vacation: 0, bonus: 50, reimb: 0,
-        weeks: [{ week_start: "2031-10-18", week_end: "2031-10-24", worked_hours: 40, reg: 40, ot: 0 }],
+        weeks: [{ week_start: "2031-10-18", week_end: "2031-10-24", worked_hours: 40, reg: 40, ot: 0, hol: 0, sick: 0, vacation: 0, bonus: 50, reimb: 0 }],
       });
     } finally {
       await conn.rollback();
@@ -107,7 +107,7 @@ describe("monthly report (integration, rolled back)", () => {
       assert.equal(octRow.ot, 5);
       assert.equal(octRow.reg, 40);
       assert.deepEqual(octRow.weeks, [
-        { week_start: "2024-09-28", week_end: "2024-10-04", worked_hours: 45, reg: 40, ot: 5 },
+        { week_start: "2024-09-28", week_end: "2024-10-04", worked_hours: 45, reg: 40, ot: 5, hol: 0, sick: 0, vacation: 0, bonus: 0, reimb: 0 },
       ]);
     } finally {
       await conn.rollback();

@@ -131,6 +131,8 @@ describe("employees (integration, rolled back)", () => {
       assert.equal((gone as any[]).length, 0);
       const [comp] = await conn.query("SELECT id FROM employee_compensation WHERE employee_id=?", [eid]);
       assert.equal((comp as any[]).length, 0);
+      const [led] = await conn.query("SELECT id FROM leave_ledger WHERE employee_id=?", [eid]);
+      assert.equal((led as any[]).length, 0); // untouched frontload accrual goes with the employee
       const [audit] = await conn.query("SELECT action FROM audit_log WHERE entity_table='employees' AND entity_id=?", [eid]);
       assert.equal((audit as any[])[0].action, "employee.delete");
     } finally {
@@ -150,6 +152,27 @@ describe("employees (integration, rolled back)", () => {
       const pid = (pp as any[])[0].id;
       await conn.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, eid]);
       await throwsStatus(() => deleteEmployee(conn, eid), 409, /employee_has_history/);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("delete is blocked when leave usage exists (pure accruals don't block)", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const { employee } = await createEmployee(conn, valid("RT10"));
+      const eid = employee.id as number;
+      const out = await deleteEmployee(conn, eid); // accrual-only → allowed
+      assert.equal(out.employee.id, eid);
+      const { employee: e2 } = await createEmployee(conn, valid("RT11"));
+      const eid2 = e2.id as number;
+      await conn.query(
+        "INSERT INTO leave_ledger (employee_id, leave_type, entry_type, hours) VALUES (?, 'SICK_SAFE_PAID', 'usage', -8)",
+        [eid2]
+      );
+      await throwsStatus(() => deleteEmployee(conn, eid2), 409, /employee_has_history/);
     } finally {
       await conn.rollback();
       await conn.end();

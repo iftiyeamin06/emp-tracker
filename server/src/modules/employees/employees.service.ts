@@ -59,14 +59,16 @@ function validate(e: EmployeeInput): void {
 export interface CreatedEmployee {
   employee: Record<string, unknown>;
   compensation: Record<string, unknown>;
+  accrualId: number;
 }
 
-// Hard delete is allowed ONLY for employees with zero business history
-// (no timecards, leave, or holiday rows). Anything with history must be
-// terminated instead — and InnoDB RESTRICT constraints back this up even if
-// the check below were ever skipped. The deletion itself is audited.
-// Attachments/cash reference entries, so covering entries covers them too.
-const HISTORY_TABLES = ["timecard_entries", "leave_ledger"] as const;
+// Hard delete is allowed ONLY for employees with zero business history (no
+// timecards, no leave usage/adjustments). Untouched frontload accruals are
+// NOT history — they are removed with the employee. Anything with real
+// history must be terminated instead — and InnoDB RESTRICT constraints back
+// this up even if the check below were ever skipped. The deletion itself is
+// audited. Attachments/cash reference entries, so covering entries covers
+// them too.
 
 export async function deleteEmployee(
   conn: Tx,
@@ -74,12 +76,16 @@ export async function deleteEmployee(
 ): Promise<{ employee: Record<string, unknown>; compensations: Record<string, unknown>[] }> {
   const [[emp]] = (await conn.query("SELECT * FROM employees WHERE id = ? LIMIT 1", [id])) as any[];
   if (!emp) fail(404, "employee_not_found");
-  for (const table of HISTORY_TABLES) {
-    const [rows] = await conn.query(`SELECT id FROM ${table} WHERE employee_id = ? LIMIT 1`, [id]);
-    if ((rows as any[]).length > 0) fail(409, "employee_has_history_terminate_instead");
-  }
+  const [entries] = await conn.query("SELECT id FROM timecard_entries WHERE employee_id = ? LIMIT 1", [id]);
+  if ((entries as any[]).length > 0) fail(409, "employee_has_history_terminate_instead");
+  const [used] = await conn.query(
+    "SELECT id FROM leave_ledger WHERE employee_id = ? AND entry_type <> 'accrual' LIMIT 1",
+    [id]
+  );
+  if ((used as any[]).length > 0) fail(409, "employee_has_history_terminate_instead");
   const [comps] = await conn.query("SELECT * FROM employee_compensation WHERE employee_id = ?", [id]);
   try {
+    await conn.query("DELETE FROM leave_ledger WHERE employee_id = ?", [id]); // frontload accruals only, by the checks above
     await conn.query("DELETE FROM employee_compensation WHERE employee_id = ?", [id]);
     await conn.query("DELETE FROM employees WHERE id = ?", [id]);
   } catch (err: any) {
@@ -161,9 +167,14 @@ export async function listEmployees(db: Db): Promise<Record<string, unknown>[]> 
   }));
 }
 
-// Inserts employee + initial compensation. Caller owns the transaction and the
-// audit writes (both must commit atomically — hard rules 1 and 3).
-export async function createEmployee(conn: Tx, e: EmployeeInput): Promise<CreatedEmployee> {
+// Inserts employee + initial compensation + initial sick frontload. Caller
+// owns the transaction and the audit writes (all must commit atomically —
+// hard rules 1 and 3). v1: flat +40 SICK_SAFE_PAID on hire, no proration.
+export async function createEmployee(
+  conn: Tx,
+  e: EmployeeInput,
+  createdBy: number | null = null
+): Promise<CreatedEmployee> {
   validate(e);
   let employeeId: number;
   try {
@@ -202,7 +213,12 @@ export async function createEmployee(conn: Tx, e: EmployeeInput): Promise<Create
     ]
   );
   const compId = (rc as any).insertId;
+  const [ra] = await conn.query(
+    "INSERT INTO leave_ledger (employee_id, leave_type, entry_type, hours, pay_period_id, reason, created_by) VALUES (?, 'SICK_SAFE_PAID', 'accrual', 40, NULL, ?, ?)",
+    [employeeId!, `Initial sick frontload on hire (${e.hire_date.slice(0, 4)} frontload)`, createdBy]
+  );
+  const accrualId = (ra as any).insertId;
   const [[employee]] = (await conn.query("SELECT * FROM employees WHERE id = ?", [employeeId!])) as any[];
   const [[compensation]] = (await conn.query("SELECT * FROM employee_compensation WHERE id = ?", [compId])) as any[];
-  return { employee: employee as Record<string, unknown>, compensation: compensation as Record<string, unknown> };
+  return { employee: employee as Record<string, unknown>, compensation: compensation as Record<string, unknown>, accrualId };
 }

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import TimecardPage from "./TimecardPage";
+import { fmtRange, groupPeriods } from "../../lib/periodOptions";
 
-const periods = [{ id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" }];
+const periods = [{ id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status: "OPEN" }];
 
 const grid = (status: string) => ({
-  period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status },
+  period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status },
   rows: [
     {
       employee: { id: 1, full_name: "Amy Example" },
@@ -70,7 +71,7 @@ describe("TimecardPage (Stage A)", () => {
     (fetch as any).mockImplementation((url: string) =>
       url.includes("/api/pay-periods")
         ? ok({ data: periods })
-        : ok({ data: { period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" }, rows: [] } })
+        : ok({ data: { period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status: "OPEN" }, rows: [] } })
     );
     render(<TimecardPage />);
     expect(await screen.findByText("No employees in this period")).toBeTruthy();
@@ -88,7 +89,7 @@ describe("TimecardPage (Stage A)", () => {
   });
 
   const fiveEights = () => ({
-    period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" },
+    period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status: "OPEN" },
     rows: [
       {
         employee: { id: 1, full_name: "Amy Example" },
@@ -153,7 +154,7 @@ describe("TimecardPage (Stage A)", () => {
       url.includes("/api/pay-periods")
         ? ok({ data: periods })
         : ok({ data: {
-            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" },
+            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status: "OPEN" },
             rows: [{
               employee: { id: 1, full_name: "Amy Example", overtime_status: "EXEMPT" },
               entry: { bonus_amount: "0.00", reimbursement_amount: "0.00" },
@@ -379,25 +380,28 @@ describe("TimecardPage (Stage A)", () => {
     (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
       if ((init?.method ?? "GET") === "POST") {
         posts.push(JSON.parse(String(init?.body)));
-        return ok({ data: { period: { id: 9, start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23", status: "OPEN" } } });
+        return ok({ data: { period: { id: 9, start_date: "2026-10-10", end_date: "2026-10-16", pay_date: "2026-10-23", status: "OPEN" } } });
       }
       if (url.includes("/api/pay-periods")) {
         listCalls += 1;
-        return ok({ data: listCalls > 1 ? [...periods, { id: 9, start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23", status: "OPEN" }] : periods });
+        return ok({ data: listCalls > 1 ? [...periods, { id: 9, start_date: "2026-10-10", end_date: "2026-10-16", pay_date: "2026-10-23", status: "OPEN" }] : periods });
       }
       return ok({ data: fiveEights() });
     });
     render(<TimecardPage />);
     await screen.findByText("Amy Example");
     fireEvent.click(screen.getByText("New Period"));
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } });
-    expect((screen.getByLabelText("Pay date") as HTMLInputElement).value).toBe("2026-10-23"); // start + 11
-    expect(screen.getByText(/Week ends: Sun Oct 18, 2026/)).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Create New Pay Period" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-10" } });
+    expect((screen.getByLabelText("Pay date") as HTMLInputElement).value).toBe("2026-10-23"); // start + 13
+    expect(screen.getByText("Saturday, October 10, 2026")).toBeTruthy();
+    expect(screen.getByText(/Friday, October 16, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Friday, October 23, 2026/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await screen.findByText("Amy Example");
     expect(posts.length).toBe(1);
-    expect(posts[0]).toEqual({ start_date: "2026-10-12", end_date: "2026-10-18", pay_date: "2026-10-23" });
-    expect(screen.queryByLabelText("Start date")).toBeNull(); // form closed
+    expect(posts[0]).toEqual({ start_date: "2026-10-10", end_date: "2026-10-16", pay_date: "2026-10-23" });
+    expect(screen.queryByRole("dialog", { name: "Create New Pay Period" })).toBeNull(); // closed
   });
 
   it("New Period overlap error stays inline", async () => {
@@ -408,10 +412,37 @@ describe("TimecardPage (Stage A)", () => {
     render(<TimecardPage />);
     await screen.findByText("Amy Example");
     fireEvent.click(screen.getByText("New Period"));
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-05" } });
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-10" } }); // Saturday overlapping the mocked Oct 5–11 week
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText("That week overlaps an existing period.")).toBeTruthy();
-    expect((screen.getByLabelText("Start date") as HTMLInputElement).value).toBe("2026-10-05"); // kept
+    expect((screen.getByLabelText("Start date") as HTMLInputElement).value).toBe("2026-10-10"); // kept
+  });
+
+  it("non-Saturday start shows inline error and disables Create", async () => {
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() })
+    );
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(screen.getByText("New Period"));
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } }); // Monday
+    expect(await screen.findByText("Start date must be a Saturday.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("modal Cancel closes without creating", async () => {
+    const calls: string[] = [];
+    (fetch as any).mockImplementation((url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: fiveEights() });
+    });
+    render(<TimecardPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(screen.getByText("New Period"));
+    expect(await screen.findByRole("dialog", { name: "Create New Pay Period" })).toBeTruthy();
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByRole("dialog", { name: "Create New Pay Period" })).toBeNull();
+    expect(calls.filter((c) => c.startsWith("POST")).length).toBe(0);
   });
 
   it("shows the CASH badge only for cash-paid employees", async () => {
@@ -419,7 +450,7 @@ describe("TimecardPage (Stage A)", () => {
       url.includes("/api/pay-periods")
         ? ok({ data: periods })
         : ok({ data: {
-            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-11", status: "OPEN" },
+            period: { id: 3, start_date: "2026-10-05", end_date: "2026-10-10", status: "OPEN" },
             rows: [
               { employee: { id: 1, full_name: "Cash Person", payment_method: "CASH" }, entry: null, days: [], computed: null },
               { employee: { id: 2, full_name: "Bank Person", payment_method: "DIRECT_DEPOSIT" }, entry: null, days: [], computed: null },
@@ -432,5 +463,74 @@ describe("TimecardPage (Stage A)", () => {
     expect(screen.getAllByText("CASH").length).toBe(1);
     expect(screen.getByText("Cash Person").closest("tr")?.textContent).toContain("CASH");
     expect(screen.getByText("Bank Person").closest("tr")?.textContent).not.toContain("CASH");
+  });
+
+  it("fmtRange renders human ranges", async () => {
+    expect(fmtRange("2026-10-31", "2026-11-06")).toBe("Oct 31 – Nov 06, 2026");
+    expect(fmtRange("2026-10-17", "2026-10-23")).toBe("Oct 17 – Oct 23, 2026");
+  });
+
+  it("groupPeriods buckets current / open / approved", async () => {
+    const g = groupPeriods(
+      [
+        { id: 1, start: "2026-10-17", end: "2026-10-23", status: "SUBMITTED" },
+        { id: 2, start: "2026-10-24", end: "2026-10-30", status: "OPEN" },
+        { id: 3, start: "2026-10-10", end: "2026-10-16", status: "APPROVED" },
+      ],
+      "2026-10-26"
+    );
+    expect(g.current.map((o) => o.id)).toEqual([2]);
+    expect(g.current[0].label).toBe("🟡 Oct 24 – Oct 30, 2026 — Current Week");
+    expect(g.open.map((o) => o.id)).toEqual([1]);
+    expect(g.open[0].label).toBe("🔵 Oct 17 – Oct 23, 2026 — Submitted");
+    expect(g.approved.map((o) => o.id)).toEqual([3]);
+  });
+
+  it("selector groups options and steppers move selection", async () => {
+    const seen: string[] = [];
+    // Weeks around the real today so one of them is the current week.
+    const toYmd = (d: Date): string =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const now = new Date();
+    const saturday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 1) % 7));
+    const prevSaturday = new Date(saturday.getTime() - 7 * 86400000);
+    const plus = (d: Date, n: number): string => toYmd(new Date(d.getTime() + n * 86400000));
+    const cur = { id: 3, start_date: toYmd(saturday), end_date: plus(saturday, 6), status: "OPEN" };
+    const older = { id: 2, start_date: toYmd(prevSaturday), end_date: plus(prevSaturday, 6), status: "OPEN" };
+    (fetch as any).mockImplementation((url: string) => {
+      seen.push(url);
+      if (url.includes("/api/pay-periods")) {
+        return ok({ data: [cur, older] });
+      }
+      return ok({ data: { period: cur, rows: [] } });
+    });
+    render(<TimecardPage />);
+    await screen.findByText("No employees in this period");
+    expect(document.querySelector('optgroup[label="Active / Current Week"]')).toBeTruthy();
+    expect(document.querySelector('optgroup[label="Open / Action Required"]')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Previous week"));
+    await screen.findByText("No employees in this period");
+    expect(seen.filter((u) => u.includes(`/api/timecards/${older.id}`)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("year filter and archived toggle narrow the selector", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/pay-periods")) {
+        return ok({ data: [
+          { id: 3, start_date: "2026-10-24", end_date: "2026-10-30", status: "OPEN" },
+          { id: 2, start_date: "2025-10-18", end_date: "2025-10-24", status: "APPROVED" },
+        ] });
+      }
+      return ok({ data: { period: { id: 3, status: "OPEN" }, rows: [] } });
+    });
+    render(<TimecardPage />);
+    await screen.findByText("No employees in this period");
+    expect(document.querySelector('optgroup[label="Approved / Closed"]')).toBeNull();
+    fireEvent.click(screen.getByLabelText("Include Archived/Approved Periods"));
+    expect(document.querySelector('optgroup[label="Approved / Closed"]')).toBeNull(); // still 2026-only
+    const yearSelect = screen.getByLabelText("Year") as HTMLSelectElement;
+    expect([...yearSelect.options].map((o) => o.value)).toEqual(["2026", "2025"]);
+    fireEvent.change(yearSelect, { target: { value: "2025" } });
+    expect(document.querySelector('optgroup[label="Approved / Closed"]')).toBeTruthy();
   });
 });

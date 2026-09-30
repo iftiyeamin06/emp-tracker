@@ -1,11 +1,16 @@
 import type { Db } from "../employees/employees.service.js";
 
 export interface MonthlyWeek {
-  week_start: string; // Monday of the ISO week
-  week_end: string; // Sunday
-  worked_hours: number; // full Mon–Sun week (all 7 days, wherever they fall)
+  week_start: string; // period start (Sat)
+  week_end: string; // period end (Fri)
+  worked_hours: number; // full period, all 7 days, wherever they fall
   reg: number;
   ot: number;
+  hol: number;
+  sick: number;
+  vacation: number;
+  bonus: number;
+  reimb: number;
 }
 
 export interface MonthlyRow {
@@ -102,7 +107,7 @@ export async function monthlyReport(db: Db, month: string): Promise<{ month: str
   // All entries (with their periods) for involved employees: OT is computed
   // per pay period from its FULL 7 days, then attributed by majority month.
   const [entryRows] = await db.query(
-    `SELECT te.id AS entry_id, te.employee_id, p.start_date, p.end_date
+    `SELECT te.id AS entry_id, te.employee_id, te.bonus_amount, te.reimb_amount, p.start_date, p.end_date
        FROM timecard_entries te
        JOIN pay_periods p ON p.id = te.pay_period_id
       WHERE te.employee_id IN (?)`,
@@ -187,9 +192,13 @@ export async function monthlyReport(db: Db, month: string): Promise<{ month: str
       if (s >= firstS && s <= lastS) inMonth += 1;
     }
     if (inMonth < 4) continue; // period belongs to the other month
-    let worked = 0;
+    let worked = 0, hol = 0, sick = 0, vac = 0;
     for (const d of daysByEntry.get(en.entry_id) ?? []) {
-      if (d.day_type === "WORK" || d.day_type === "HOLIDAY_WORKED") worked += Number(d.hours);
+      const h = Number(d.hours);
+      if (d.day_type === "WORK" || d.day_type === "HOLIDAY_WORKED") worked += h;
+      else if (d.day_type === "SICK_SAFE_PAID") sick += h;
+      else if (d.day_type === "HOLIDAY") hol += h;
+      else if (d.day_type === "VACATION") vac += h;
     }
     const elig = eligibility(en.employee_id, endS);
     const thr = thresholdAt(endS);
@@ -199,7 +208,8 @@ export async function monthlyReport(db: Db, month: string): Promise<{ month: str
     if (!a) continue;
     a.reg += reg;
     a.ot += ot;
-    a.weeks.push({ week_start: startS, week_end: endS, worked_hours: num(worked), reg: num(reg), ot: num(ot) });
+    a.weeks.push({ week_start: startS, week_end: endS, worked_hours: num(worked), reg: num(reg), ot: num(ot),
+      hol: num(hol), sick: num(sick), vacation: num(vac), bonus: num(en.bonus_amount), reimb: num(en.reimb_amount) });
   }
 
   return {

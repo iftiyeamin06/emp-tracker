@@ -4,7 +4,7 @@ import { writeAudit } from "../../lib/audit.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { requireRole } from "../../middleware/role.js";
 import { withOpenPeriod } from "../../lib/periodLock.js";
-import { approvePeriod, createPayPeriod, listPayPeriods, submitPeriod } from "./payPeriods.service.js";
+import { approvePeriod, createPayPeriod, listPayPeriods, reopenPeriod, submitPeriod } from "./payPeriods.service.js";
 
 export const payPeriodRoutes = Router();
 
@@ -68,6 +68,24 @@ payPeriodRoutes.post("/:id/approve", requireAuth, requireRole("OWNER"), async (r
     if (!Number.isInteger(id)) return res.status(400).json({ error: "period_id_invalid" });
     await conn.beginTransaction();
     const period = await approvePeriod(conn, req.session.user!.id, req.ip, id);
+    await conn.commit();
+    res.json({ data: { period } });
+  } catch (e) {
+    await conn.rollback();
+    next(e);
+  } finally {
+    conn.release();
+  }
+});
+
+// Reopen an APPROVED period back to OPEN. Owner only, reason required.
+payPeriodRoutes.post("/:id/reopen", requireAuth, requireRole("OWNER"), async (req, res, next) => {
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "period_id_invalid" });
+    await conn.beginTransaction();
+    const period = await reopenPeriod(conn, req.session.user!.id, req.ip, id, req.body?.reason);
     await conn.commit();
     res.json({ data: { period } });
   } catch (e) {

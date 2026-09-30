@@ -117,3 +117,32 @@ export async function approvePeriod(
   });
   return period as Record<string, unknown>;
 }
+
+// Owner-only controlled return from APPROVED to OPEN. Reason mandatory.
+// Return (SUBMITTED back to OPEN) stays deferred — this is reopen only.
+export async function reopenPeriod(
+  conn: Tx,
+  actorId: number,
+  ip: string | undefined,
+  id: number,
+  reason: unknown
+): Promise<Record<string, unknown>> {
+  if (typeof reason !== "string" || !reason.trim()) fail(400, "reopen_reason_required");
+  const [[p]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ? FOR UPDATE", [id])) as any[];
+  if (!p) fail(404, "pay_period_not_found");
+  if (p.status !== "APPROVED") fail(409, "period_not_approved");
+  const before = { status: "APPROVED", approved_by: p.approved_by, approved_at: p.approved_at };
+  await conn.query("UPDATE pay_periods SET status = 'OPEN', approved_by = NULL, approved_at = NULL WHERE id = ?", [id]);
+  const [[period]] = (await conn.query("SELECT * FROM pay_periods WHERE id = ?", [id])) as any[];
+  await writeAudit(conn, {
+    actorUserId: actorId,
+    action: "reopen",
+    entityTable: "pay_periods",
+    entityId: id,
+    before,
+    after: { status: "OPEN" },
+    reason: (reason as string).trim(),
+    ip,
+  });
+  return period as Record<string, unknown>;
+}

@@ -108,7 +108,7 @@ describe("EmployeesPage", () => {
     (window as any).confirm = vi.fn().mockReturnValue(false);
     render(<EmployeesPage />);
     await screen.findByText("Gone Person");
-    expect(screen.getByText("Terminated 2026-10-01")).toBeTruthy();
+    expect(screen.getByText("Terminated Oct 01, 2026")).toBeTruthy();
     fireEvent.click(screen.getByText("Rehire"));
     expect(calls.filter((c) => c.startsWith("PUT")).length).toBe(0);
     (window as any).confirm = vi.fn().mockReturnValue(true);
@@ -185,5 +185,30 @@ describe("EmployeesPage", () => {
     expect(ddRow?.textContent).not.toContain("CASH");
     const checkRow = screen.getByText("Check Person").closest("tr");
     expect(checkRow?.textContent).toContain("Check");
+  });
+
+  it("profile drawer renders the sick balance card from mock data", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url === "/api/employees/1/leave") {
+        return ok({
+          data: {
+            balances: { SICK_SAFE_PAID: 32 },
+            ledger: [
+              { date: "2026-01-01", leave_type: "SICK_SAFE_PAID", entry_type: "accrual", hours: 40, note: "2026 frontload" },
+              { date: "2026-10-20", leave_type: "SICK_SAFE_PAID", entry_type: "usage", hours: -8, note: "2031-10-13" },
+            ],
+          },
+        });
+      }
+      return ok(list());
+    });
+    render(<EmployeesPage />);
+    await screen.findByText("Amy Example");
+    fireEvent.click(screen.getAllByText("View")[0]);
+    expect(await screen.findByText("Sick: 32 of 40 hours remaining")).toBeTruthy();
+    expect(await screen.findByText("Leave History")).toBeTruthy();
+    expect(screen.getByText("2026 frontload")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("Sick: 32 of 40 hours remaining")).toBeNull();
   });
 });
