@@ -1,7 +1,9 @@
+import { Moon, Sun } from "lucide-react";
 import { post } from "../api/client";
-import { c, font } from "./theme";
-import { Logo } from "./polish";
 import type { SessionUser } from "../features/auth/LoginPage";
+import { Logo } from "./polish";
+import { Button } from "./ui/button";
+import { cn } from "../lib/utils";
 
 const NAV: { hash: string; label: string; roles: SessionUser["role"][] }[] = [
   { hash: "#/timecards", label: "Timecards", roles: ["ADMIN"] },
@@ -11,30 +13,23 @@ const NAV: { hash: string; label: string; roles: SessionUser["role"][] }[] = [
 
 export function Sidebar({ role, route }: { role: SessionUser["role"]; route: string }) {
   return (
-    <aside style={{ width: 220, flexShrink: 0, background: c.card, borderRight: `1px solid ${c.border}`, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 16px" }}>
+    <aside className="flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-card p-4">
+      <div className="flex items-center gap-2.5 px-2 pb-4 pt-2">
         <Logo size={32} />
-        <span style={{ ...font.section }}>Tracker</span>
+        <span className="text-base font-medium">Tracker</span>
       </div>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <nav className="flex flex-col gap-1">
         {NAV.filter((n) => n.roles.includes(role)).map((n) => {
           const active = route === n.hash;
           return (
-            <a
+            <Button
               key={n.hash}
-              href={n.hash}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 8,
-                textDecoration: "none",
-                fontSize: 14,
-                fontWeight: active ? 600 : 400,
-                color: active ? c.primary : c.ink,
-                background: active ? "#eff6ff" : "transparent",
-              }}
+              asChild
+              variant={active ? "secondary" : "ghost"}
+              className={cn("w-full justify-start", active && "font-semibold")}
             >
-              {n.label}
-            </a>
+              <a href={n.hash}>{n.label}</a>
+            </Button>
           );
         })}
       </nav>
@@ -42,7 +37,7 @@ export function Sidebar({ role, route }: { role: SessionUser["role"]; route: str
   );
 }
 
-export function TopBar({ title, me, onLogout }: { title: string; me: SessionUser; onLogout: () => void }) {
+export function TopBar({ title, me, onLogout, darkMode, onToggleTheme }: { title: string; me: SessionUser; onLogout: () => void; darkMode: boolean; onToggleTheme: () => void }) {
   const logout = async () => {
     try {
       await post("/api/auth/logout");
@@ -52,22 +47,26 @@ export function TopBar({ title, me, onLogout }: { title: string; me: SessionUser
   };
 
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "16px 24px",
-        background: c.card,
-        borderBottom: `1px solid ${c.border}`,
-      }}
-    >
-      <h1 style={{ ...font.title, margin: 0 }}>{title}</h1>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={font.muted}>
+    <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
+      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+      <div className="flex items-center gap-2">
+        <span className="mr-1 text-sm text-muted-foreground">
           {me.email} ({me.role})
         </span>
-        <button onClick={logout}>Log out</button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onToggleTheme}
+          aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`}
+          aria-pressed={darkMode}
+        >
+          {darkMode ? <Sun /> : <Moon />}
+          {darkMode ? "Light" : "Dark"}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={logout}>
+          Log out
+        </Button>
       </div>
     </header>
   );

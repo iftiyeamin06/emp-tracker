@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import { get } from "./api/client";
-import { c } from "./components/theme";
 import { Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
 import ReportPage from "./features/report/ReportPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import EmployeesPage from "./features/employees/EmployeesPage";
 import { Sidebar, TopBar } from "./components/TopBar";
+import "./theme.css";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
 const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/"];
 const TITLES: Record<string, string> = {
-  "#/report": "Weekly Report",
+  "#/report": "Reports",
   "#/timecards": "Timecards",
   "#/employees": "Employees",
 };
@@ -28,6 +28,7 @@ function useHashRoute(): string {
 
 export default function App() {
   const [me, setMe] = useState<SessionUser | null | undefined>(undefined); // undefined = loading
+  const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("emp-tracker-theme") === "dark");
   const route = useHashRoute();
 
   useEffect(() => {
@@ -55,9 +56,14 @@ export default function App() {
     window.location.hash = "#/login";
   };
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    window.localStorage.setItem("emp-tracker-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+
   if (me === undefined) {
     return (
-      <main style={{ fontFamily: "system-ui", padding: 24 }}>
+      <main className="p-6">
         <Skeleton rows={3} cols={4} />
       </main>
     );
@@ -65,18 +71,18 @@ export default function App() {
 
   if (!me) {
     return (
-      <main style={{ fontFamily: "system-ui" }}>
+      <main>
         {route === "#/login" && <LoginPage onSuccess={(u) => setMe(u)} />}
       </main>
     );
   }
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: c.bg, fontFamily: "system-ui" }}>
+    <div className="flex min-h-screen bg-muted/40">
       <Sidebar role={me.role} route={route} />
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} />
-        <main style={{ padding: 24 }}>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
+        <main className="p-6">
           {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
           {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : <p>Access denied.</p>)}
