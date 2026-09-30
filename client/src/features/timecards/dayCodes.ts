@@ -8,6 +8,9 @@ const PREFIX: Record<string, string> = {
   PROTECTED_UNPAID: "SU",
   PRENATAL: "P",
   HOLIDAY_WORKED: "HW",
+  // The API returns v1 wire names for these mapped DB values.
+  SICK: "S",
+  HW8: "HW",
 };
 
 const TO_DB: Record<string, string> = { H8: "HOLIDAY", S8: "SICK", V8: "VACATION", HW8: "HOLIDAY_WORKED" };

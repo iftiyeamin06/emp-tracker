@@ -165,15 +165,17 @@ describe("period workflow (integration, rolled back)", () => {
     }
   });
 
-  it("reopen on OPEN or SUBMITTED is 409", async () => {
+  it("reopen on OPEN is 409 and SUBMITTED returns to OPEN", async () => {
     const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     try {
       const actor = await realActor(conn);
       const created = await freshPeriod(conn);
-      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "x"), 409, /period_not_approved/);
+      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "x"), 409, /period_not_reopenable/);
       await submitPeriod(conn, actor, undefined, created.id as number);
-      await throwsStatus(() => reopenPeriod(conn, actor, undefined, created.id as number, "x"), 409, /period_not_approved/);
+      const reopened = await reopenPeriod(conn, actor, undefined, created.id as number, "fix submitted report");
+      assert.equal(reopened.status, "OPEN");
+      await assertPeriodOpen(conn, created.id as number);
     } finally {
       await conn.rollback();
       await conn.end();

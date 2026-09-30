@@ -26,7 +26,6 @@
 - Wage-rule enforcement beyond minimum-wage check
 - Alerts beyond the six listed in §6
 - Trend charts, audit UI, per-employee history pages
-- Return / reopen workflow (only submit + approve in v1)
 - 2FA (design-ready, not implemented)
 
 ---
@@ -40,6 +39,7 @@
 | Enter / edit timecards (period OPEN) | Yes | No |
 | Submit a period | Yes | No |
 | Approve a period | No | Yes |
+| Reopen a submitted or approved period | No | Yes |
 | View weekly report | Yes | Yes |
 
 Two roles only: `ADMIN`, `OWNER`. Role checks enforced server-side.
@@ -48,13 +48,22 @@ Two roles only: `ADMIN`, `OWNER`. Role checks enforced server-side.
 
 ## 3. Pay period workflow
 
-- **OPEN** — admin can edit timecards.
-- **SUBMITTED** — read-only for admin. Owner reviews.
-- **APPROVED** — locked. No edits.
+```mermaid
+stateDiagram-v2
+    OPEN --> SUBMITTED: Admin submit
+    SUBMITTED --> APPROVED: Owner approve
+    SUBMITTED --> OPEN: Owner reopen (audit action: reopen)
+    APPROVED --> OPEN: Owner reopen (audit action: reopen)
+```
 
-Only Owner approves. All transitions write to `audit_log`.
+| Transition | Role | Result |
+|------------|------|--------|
+| OPEN → SUBMITTED | Admin | Locks timecard editing; audit action `status` |
+| SUBMITTED → APPROVED | Owner | Approves and locks the period; audit action `status` |
+| SUBMITTED → OPEN | Owner | Reopens for editing; reason required; audit action `reopen` |
+| APPROVED → OPEN | Owner | Reopens for editing; reason required; audit action `reopen` |
 
-Return and reopen are **out of scope for v1**. If the Owner needs changes after approval, they contact the admin offline.
+All transitions write to `audit_log`. Reopen clears the submission and approval metadata; the required reason is recorded with the `reopen` audit event.
 
 ---
 
@@ -110,7 +119,7 @@ One table: employee name + regular, OT, holiday, sick, vacation hours + bonus + 
 
 ---
 
-## 8. API routes (v1 — ten only)
+## 8. API routes (v1)
 
 | Method | Route | Role | Purpose |
 |--------|-------|------|---------|
@@ -125,6 +134,7 @@ One table: employee name + regular, OT, holiday, sick, vacation hours + bonus + 
 | PUT | `/api/timecards/:periodId` | admin | Save daily entries + extras |
 | POST | `/api/pay-periods/:id/submit` | admin | OPEN → SUBMITTED |
 | POST | `/api/pay-periods/:id/approve` | owner | SUBMITTED → APPROVED |
+| POST | `/api/pay-periods/:id/reopen` | owner | SUBMITTED or APPROVED → OPEN (reason required) |
 
 ---
 
@@ -175,7 +185,6 @@ Unused tables cost nothing. They become active in v2.
 - Excel and PDF exports (waiting on CPA sample)
 - Audit log UI
 - Trend charts, per-employee history pages
-- Return / reopen workflow
 - 2FA implementation
 - Automated backups
 

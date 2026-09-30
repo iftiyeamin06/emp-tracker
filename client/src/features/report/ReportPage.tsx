@@ -594,15 +594,15 @@ export default function ReportPage() {
               </select>
             </label>
           )}
-          {mode === "weekly" && status === "SUBMITTED" && (
-            <Button onClick={approve} disabled={approving}>
+          {mode === "weekly" && (
+            <>
+            <Button onClick={approve} disabled={status !== "SUBMITTED" || approving || reopening}>
               {approving ? "Approving…" : "Approve"}
             </Button>
-          )}
-          {mode === "weekly" && status === "APPROVED" && (
-            <Button variant="outline" onClick={() => { setReopenOpen(true); setReopenError(""); }}>
+            <Button variant="outline" onClick={() => { setReopenOpen(true); setReopenError(""); }} disabled={(status !== "APPROVED" && status !== "SUBMITTED") || approving || reopening}>
               Reopen
             </Button>
+            </>
           )}
           {reopenOpen && (
             <div

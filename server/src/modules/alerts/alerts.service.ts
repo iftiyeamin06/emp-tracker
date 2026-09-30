@@ -62,14 +62,15 @@ async function missingEntry(db: Db, period: PeriodRow): Promise<Alert[]> {
   }));
 }
 
-// Hourly overtimers: timecard_weekly rows with ot_hours > 0 for this period,
-// NON_EXEMPT only (the view already resolves exemption as of period end).
+// Surface any overtime amount the report view calculates. In particular,
+// the view can calculate OT when no compensation row covers period end, so
+// filtering on overtime_status here would hide OT already shown in the report.
 async function overtime(db: Db, periodId: number): Promise<Alert[]> {
   const [rows] = await db.query(
     `SELECT w.employee_id, e.full_name, w.ot_hours
        FROM timecard_weekly w
        JOIN employees e ON e.id = w.employee_id
-      WHERE w.pay_period_id = ? AND w.ot_hours > 0 AND w.overtime_status = 'NON_EXEMPT'
+      WHERE w.pay_period_id = ? AND w.ot_hours > 0
       ORDER BY e.full_name, e.id`,
     [periodId]
   );
