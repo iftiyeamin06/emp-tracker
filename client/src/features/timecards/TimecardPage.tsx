@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { get, post, put } from "../../api/client";
+import { availableYears, defaultYear, filterPeriods, groupPeriods } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
-import { btnGhost, btnOff, btnPrimary, btnSecondary, c, card, font, hoverCss, table, td, th } from "../../components/theme";
+import { hoverCss } from "../../components/theme";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { formatDay, leaveHoursOf, parseCell, workedHoursOf } from "./dayCodes";
 
 interface Period {
@@ -32,30 +37,20 @@ interface GridRow {
 
 const DOW = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
-// Page-specific: cell inputs, sticky name column, banners (tokens in theme.ts).
-const cellInput: React.CSSProperties = { width: "100%", minWidth: 34, boxSizing: "border-box", padding: "6px 2px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14, textAlign: "center", background: "#fff" };
-const lockBanner: React.CSSProperties = { border: "1px solid #fcd34d", background: "#fef3c7", borderRadius: 8, padding: "8px 12px", color: "#92400e" };
-const toastOk: React.CSSProperties = { background: c.success, color: "#fff", borderRadius: 12, padding: "2px 10px", fontSize: 13 };
-const amberDot: React.CSSProperties = { display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: c.warning, marginRight: 6 };
+// Native select dressed like the shadcn Input (same reason as EmployeesPage).
+const selectClass =
+  "flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
-// Shared date-input look (New Period form and any future date input).
-const dateInput: React.CSSProperties = {
-  padding: "10px 12px",
-  border: "1px solid #d1d5db",
-  borderRadius: 6,
-  fontSize: 14,
-  minWidth: 160,
-  background: "#fff",
-  color: "#111827",
-};
-
-// Long week-ends label, e.g. "Sat Sep 19, 2026" (UTC math on a calendar string).
+// Full weekday label, e.g. "Saturday, September 19, 2026" (UTC math on a calendar string).
 const fmtLong = (ymdStr: string): string => {
   const d = new Date(ymdStr + "T00:00:00Z");
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return `${days[d.getUTCDay()]}, ${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 };
+
+const isSaturday = (ymdStr: string): boolean =>
+  /^\d{4}-\d{2}-\d{2}$/.test(ymdStr) && new Date(ymdStr + "T00:00:00Z").getUTCDay() === 6;
 
 // v1 entry codes (case-insensitive on input, stored uppercase).
 // Plain 0–24 numbers are also accepted and mean WORK with those hours,
@@ -91,13 +86,13 @@ const num = (v: unknown): string => {
 // preview when dirty), not typed.
 function ComputedCell({ label, value }: { label: string; value: string }) {
   return (
-    <input
+    <Input
       aria-label={label}
       value={value}
       disabled
       readOnly
       size={5}
-      style={{ color: "#6b7280", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 6, width: "100%", minWidth: 34, boxSizing: "border-box", padding: "6px 2px", fontSize: 14, textAlign: "center" }}
+      className="min-w-[34px] border-muted bg-muted px-0.5 text-center text-muted-foreground"
     />
   );
 }
@@ -122,13 +117,13 @@ function DayCell({
     else setDraft(value); // invalid → revert
   };
   return (
-    <input
+    <Input
       aria-label={label}
       value={draft}
       placeholder="–"
       title="8 = worked day, H8 holiday, S8 sick, V8 vacation — or type hours like 9"
       size={4}
-      style={cellInput}
+      className="min-w-[34px] px-0.5 text-center"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -163,13 +158,13 @@ function MoneyCell({
     else setDraft(value); // invalid → revert
   };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-      {prefix && <span aria-hidden style={{ color: "#6b7280" }}>{prefix}</span>}
-      <input
+    <span className="inline-flex items-center gap-0.5">
+      {prefix && <span aria-hidden className="text-muted-foreground">{prefix}</span>}
+      <Input
         aria-label={label}
         value={draft}
         size={6}
-        style={{ ...cellInput, textAlign: "right" }}
+        className="min-w-[34px] px-0.5 text-right"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -244,15 +239,8 @@ export default function TimecardPage() {
     get<{ data: Period[] }>("/api/pay-periods")
       .then((j) => {
         setPeriods(j.data);
-        // NOTE: `selectId != null && ...` would yield `false` (not nullish),
-        // which ?? would NOT skip — hence the ternary here.
-        const preferred =
-          (selectId != null ? j.data.find((p) => p.id === selectId) : undefined) ??
-          j.data.find((p) => p.status === "OPEN") ??
-          j.data[0] ??
-          null;
-        setPeriodId(preferred ? preferred.id : null);
-        if (!preferred) setLoading(false);
+        if (selectId != null) setPeriodId(selectId); // create flow: select the new one
+        setLoading(false);
       })
       .catch(() => {
         setError("Could not load pay periods.");
@@ -265,6 +253,18 @@ export default function TimecardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!showNew) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowNew(false);
+        setNewError("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showNew]);
+
   const addDays = (ymd: string, n: number): string => {
     const t = new Date(ymd + "T00:00:00Z").getTime();
     const d = new Date(t + n * 86400000);
@@ -273,6 +273,14 @@ export default function TimecardPage() {
 
   const createPeriod = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSaturday(newStart)) {
+      setNewError("Start date must be a Saturday.");
+      return;
+    }
+    if (newPay < addDays(newStart, 6)) {
+      setNewError("Check date must be on or after the week end.");
+      return;
+    }
     setCreating(true);
     setNewError("");
     try {
@@ -289,7 +297,7 @@ export default function TimecardPage() {
       setNewError(
         err?.status === 409
           ? "That week overlaps an existing period."
-          : "Couldn't create the period. Start must be a Monday and pay day on/after week end."
+          : "Couldn't create the period. Start must be a Saturday and check date on/after week end."
       );
     } finally {
       setCreating(false);
@@ -401,164 +409,284 @@ export default function TimecardPage() {
       JSON.stringify({ c: base.c?.[empId] ?? {}, x: base.x?.[empId] ?? { bonus: "0", reimb: "0" } });
   };
 
+  const todayYmd = cal(new Date());
+  const [year, setYear] = useState<string | null>(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const normalized = periods.map((p) => ({ ...p, start: cal(p.start_date), end: cal(p.end_date) }));
+  const years = availableYears(normalized);
+  const effYear = year ?? defaultYear(normalized, todayYmd);
+  const visibleIds = new Set(
+    effYear ? filterPeriods(normalized, { year: effYear, includeArchived }).map((p) => p.id) : []
+  );
+  const visiblePeriods = periods.filter((p) => visibleIds.has(p.id));
+  const groups = groupPeriods(
+    visiblePeriods.map((p) => ({ id: p.id, start: cal(p.start_date), end: cal(p.end_date), status: p.status })),
+    todayYmd
+  );
+  const step = (dir: 1 | -1) => {
+    const idx = visiblePeriods.findIndex((p) => p.id === periodId);
+    const next = visiblePeriods[idx + dir]; // list is newest-first: +1 = older week, -1 = newer
+    if (next) setPeriodId(next.id);
+  };
+
+  // Keep the selection inside the visible filter (preferred: first OPEN).
+  useEffect(() => {
+    if (periods.length === 0) {
+      if (periodId !== null) setPeriodId(null);
+      return;
+    }
+    if (!visiblePeriods.some((p) => p.id === periodId)) {
+      const pref = visiblePeriods.find((p) => p.status === "OPEN") ?? visiblePeriods[0] ?? null;
+      setPeriodId(pref ? pref.id : null);
+      if (!pref) {
+        setPeriod(null);
+        setBaseRows([]);
+        setCells({});
+        setExtras({});
+        setBaseline("");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periods, year, includeArchived]);
+
   return (
-    <section>
+    <section className="space-y-4">
       <style>{hoverCss}</style>
-      <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-      <h2 style={{ ...font.section, margin: "0 0 12px" }}>Timecards</h2>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-      <label>
-        Period{" "}
-        <select value={periodId ?? ""} onChange={(e) => setPeriodId(Number(e.target.value))} disabled={periods.length === 0} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14 }}>
-          {periods.map((p) => (
-            <option key={p.id} value={p.id}>
-              {cal(p.start_date)} → {cal(p.end_date)} ({p.status})
-            </option>
+      <Card className="p-4">
+      <h2 className="mb-3 text-lg font-semibold tracking-tight">Timecards</h2>
+      <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1.5 text-sm">
+        Year{" "}
+        <select
+          aria-label="Year"
+          value={effYear ?? ""}
+          onChange={(e) => setYear(e.target.value)}
+          disabled={years.length === 0}
+          className={selectClass}
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>{y}</option>
           ))}
         </select>
+      </label>
+      <label className="flex items-center gap-1.5 text-sm">
+        <input
+          type="checkbox"
+          checked={includeArchived}
+          onChange={(e) => setIncludeArchived(e.target.checked)}
+          className="accent-primary"
+        />{" "}
+        Include Archived/Approved Periods
+      </label>
+      <label className="flex items-center gap-1 text-sm">
+        Period{" "}
+        <Button aria-label="Previous week" variant="ghost" size="icon" onClick={() => step(1)} disabled={visiblePeriods.length === 0 || visiblePeriods.findIndex((p) => p.id === periodId) >= visiblePeriods.length - 1}>‹</Button>
+        <select value={periodId ?? ""} onChange={(e) => setPeriodId(Number(e.target.value))} disabled={visiblePeriods.length === 0} className={selectClass}>
+          {groups.current.length > 0 && (
+            <optgroup label="Active / Current Week">
+              {groups.current.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </optgroup>
+          )}
+          {groups.open.length > 0 && (
+            <optgroup label="Open / Action Required">
+              {groups.open.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </optgroup>
+          )}
+          {groups.approved.length > 0 && (
+            <optgroup label="Approved / Closed">
+              {groups.approved.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <Button aria-label="Next week" variant="ghost" size="icon" onClick={() => step(-1)} disabled={visiblePeriods.length === 0 || visiblePeriods.findIndex((p) => p.id === periodId) <= 0}>›</Button>
       </label>{" "}
-      <button style={btnGhost} onClick={() => { setShowNew((s) => !s); setNewError(""); }}>
-        {showNew ? "Cancel" : "New Period"}
-      </button>
-      <span style={{ flex: 1 }} />
+      <Button variant="ghost" onClick={() => { setShowNew(true); setNewError(""); }}>
+        New Period
+      </Button>
+      <span className="flex-1" />
       {!locked && (
-        <button onClick={save} disabled={!dirty || saving} style={!dirty || saving ? { ...btnSecondary, ...btnOff } : btnSecondary}>
-          {saving ? (<><span aria-hidden className="tc-spinner" style={{ borderColor: "rgba(0,0,0,.2)", borderTopColor: "#111827" }} /> Saving…</>) : "Save"}
-        </button>
+        <Button variant="outline" onClick={save} disabled={!dirty || saving}>
+          {saving ? (<><span aria-hidden className="tc-spinner border-black/20 border-t-gray-900" /> Saving…</>) : "Save"}
+        </Button>
       )}
       {!locked && (
-        <button onClick={submit} disabled={dirty || submitting} style={dirty || submitting ? { ...btnPrimary, ...btnOff } : btnPrimary}>
+        <Button onClick={submit} disabled={dirty || submitting}>
           {submitting ? (<><span aria-hidden className="tc-spinner" /> Submitting…</>) : "Submit Period"}
-        </button>
+        </Button>
       )}
       </div>
-      {dirty && <span><span aria-hidden style={amberDot} />● Unsaved changes</span>}
+      {dirty && <span className="text-sm"><span aria-hidden className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-500" />● Unsaved changes</span>}
       {!locked && (
-        <p style={{ color: "#666", fontSize: 13, margin: "4px 0" }}>
+        <p className="my-1 text-[13px] text-muted-foreground">
           Type hours (e.g. 9) or a code: 8 worked · H8 holiday · S8 sick · V8 vacation · HW8 worked holiday. Click Save when done.
         </p>
       )}
-      {savedFlash && <span style={toastOk}>Saved</span>}
-      </div>
+      {savedFlash && <span className="rounded-xl bg-green-600 px-2.5 py-0.5 text-[13px] text-white">Saved</span>}
+      </Card>
       {showNew && (
-        <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-        <form onSubmit={createPeriod}>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 12 }}>
-          <label>
-            Start (Monday)<br />
-            <input
+        <div
+          role="presentation"
+          onClick={() => { setShowNew(false); setNewError(""); }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+        <Card
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create New Pay Period"
+          onClick={(e) => e.stopPropagation()}
+          className="max-h-[90vh] w-full max-w-xl overflow-y-auto p-6"
+        >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-medium">Create New Pay Period</h3>
+          <Button type="button" aria-label="Close" variant="ghost" size="icon" onClick={() => { setShowNew(false); setNewError(""); }}>✕</Button>
+        </div>
+        <form onSubmit={createPeriod} className="space-y-3">
+          <label className="mb-3 block text-xs font-medium text-muted-foreground">
+            Pay Period Start Date *
+            <Input
               aria-label="Start date"
               type="date"
-              className="tc-date"
-              style={dateInput}
+              className="tc-date mt-1 min-w-[160px]"
               value={newStart}
               onChange={(e) => {
                 const v = e.target.value;
                 setNewStart(v);
-                if (/^\d{4}-\d{2}-\d{2}$/.test(v)) setNewPay(addDays(v, 11)); // default pay day, editable
+                if (/^\d{4}-\d{2}-\d{2}$/.test(v)) setNewPay(addDays(v, 13)); // default payday, editable
               }}
             />
+            <span className="text-muted-foreground">{newStart ? fmtLong(newStart) : "Pick a Saturday"}</span>
+            {newStart && !isSaturday(newStart) && (
+              <span className="text-destructive">Start date must be a Saturday.</span>
+            )}
           </label>
-          <label>
-            Pay date<br />
-            <input aria-label="Pay date" type="date" className="tc-date" style={dateInput} value={newPay} onChange={(e) => setNewPay(e.target.value)} />
+          <label className="mb-3 block text-xs font-medium text-muted-foreground">
+            Pay Period End Date (Auto-calculated)
+            <Input
+              aria-label="End date"
+              type="date"
+              className="tc-date mt-1 bg-muted"
+              value={newStart ? addDays(newStart, 6) : ""}
+              readOnly
+            />
+            <span className="text-muted-foreground">🔒 {newStart ? fmtLong(addDays(newStart, 6)) : "—"}</span>
           </label>
-          <span style={{ color: "#666" }}>Week ends: {newStart ? fmtLong(addDays(newStart, 6)) : "—"}</span>
-          <span style={{ flex: 1 }} />
-          <button type="button" style={btnSecondary} onClick={() => { setShowNew(false); setNewError(""); }}>Cancel</button>
-          <button type="submit" disabled={creating || !newStart || !newPay} style={creating || !newStart || !newPay ? { ...btnPrimary, ...btnOff } : btnPrimary}>
-            {creating ? "Creating…" : "Create"}
-          </button>
-          </div>
+          <label className="mb-3 block text-xs font-medium text-muted-foreground">
+            Check Date (Payday) *
+            <Input
+              aria-label="Pay date"
+              type="date"
+              className="tc-date mt-1 min-w-[160px]"
+              value={newPay}
+              onChange={(e) => setNewPay(e.target.value)}
+            />
+            <span className="text-muted-foreground">{newPay ? fmtLong(newPay) : "—"}</span>
+          </label>
           {newError && <Notice title="Couldn't create the period" message={newError} />}
+          <div className="mt-4 flex gap-2">
+            <Button type="button" variant="outline" onClick={() => { setShowNew(false); setNewError(""); }}>Cancel</Button>
+            <Button
+              type="submit"
+              disabled={creating || !newStart || !newPay || !isSaturday(newStart)}
+              className="flex-1"
+            >
+              {creating ? "Creating…" : "Create"}
+            </Button>
+          </div>
         </form>
+        </Card>
         </div>
       )}
       {saveError && <Notice title="Couldn't save" message={saveError} />}
       {submitError && <Notice title="Couldn't submit" message={submitError} />}
-      {period && period.status !== "OPEN" && <p style={lockBanner}>Period {period.status} — read only</p>}
+      {period && period.status !== "OPEN" && <p className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-amber-800">Period {period.status} — read only</p>}
       {loading && <Skeleton rows={6} cols={10} />}
       {error && <Notice title="Couldn't load timecards" message="Check your connection, then try again." onRetry={() => periodId != null && loadGrid(periodId)} />}
       {!loading && !error && periods.length === 0 && (
-        <div style={{ ...card, padding: 32, textAlign: "center" }}>
+        <Card className="p-8 text-center">
           <EmptyState title="No pay periods yet" hint="Create your first weekly period to start entering time." />
-          <button style={btnPrimary} onClick={() => { setShowNew(true); setNewError(""); }}>
+          <Button onClick={() => { setShowNew(true); setNewError(""); }}>
             Create your first period
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
       {!loading && !error && periods.length > 0 && baseRows.length === 0 && (
-        <div style={{ ...card, padding: 16 }}>
+        <Card className="p-4">
           <EmptyState
             title="No employees in this period"
             hint="Nobody was employed during this week."
-            action={<a href="#/employees">Go to Employees</a>}
+            action={<a href="#/employees" className="text-primary underline underline-offset-4">Go to Employees</a>}
           />
-        </div>
+        </Card>
       )}
       {!loading && !error && baseRows.length > 0 && (
-        <div style={card}>
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={{ ...th, left: 0, zIndex: 3 }}>Name</th>
+        <Card>
+        <Table className="timecard-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 z-[3] bg-card">Name</TableHead>
               {DOW.map((d) => (
-                <th style={th} key={d}>{d}</th>
+                <TableHead key={d}>{d}</TableHead>
               ))}
-              <th style={th}>Regular Hours</th>
-              <th style={th}>Overtime Hours</th>
-              <th style={th}>Vacation Hours</th>
-              <th style={th}>Bonus Amount</th>
-              <th style={th}>Holiday Hours</th>
-              <th style={th}>Reimbursement Amount</th>
-              <th style={th}>Sick Hours</th>
-            </tr>
-          </thead>
-          <tbody>
-            {baseRows.map((r, i) => {
+              <TableHead>Regular Hours</TableHead>
+              <TableHead>Overtime Hours</TableHead>
+              <TableHead>Vacation Hours</TableHead>
+              <TableHead>Bonus Amount</TableHead>
+              <TableHead>Holiday Hours</TableHead>
+              <TableHead>Reimbursement Amount</TableHead>
+              <TableHead>Sick Hours</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {baseRows.map((r) => {
               const empId = r.employee.id;
               const clean = baseline !== "" && rowClean(empId);
               const pv = preview(empId);
               return (
-                <tr key={empId} className="tc-row" style={i % 2 === 1 ? { background: "#f8fafc" } : undefined}>
-                  <td style={{ ...td, position: "sticky", left: 0, background: "inherit", fontWeight: 600, whiteSpace: "nowrap", zIndex: 1 }}>{r.employee.full_name}{r.employee.payment_method === "CASH" && <CashBadge />}</td>
+                <TableRow key={empId} className="tc-row odd:bg-muted/50">
+                  <TableCell className="sticky left-0 z-[1] whitespace-nowrap bg-card font-semibold">{r.employee.full_name}{r.employee.payment_method === "CASH" && <CashBadge />}</TableCell>
                   {dates.map((date) => (
-                    <td key={date} style={{ ...td, minWidth: 60 }}>
+                    <TableCell key={date} className="min-w-[60px]">
                       <DayCell
                         value={cells[empId]?.[date] ?? ""}
                         readOnly={locked}
                         label={`day-${empId}-${date}`}
                         onCommit={commitCell(empId, date)}
                       />
-                    </td>
+                    </TableCell>
                   ))}
-                  <td style={{ ...td, textAlign: "right" }}><ComputedCell label={`reg-${empId}`} value={clean ? num(r.computed?.reg_hours) : String(pv.reg)} /></td>
-                  <td style={{ ...td, textAlign: "right" }}><ComputedCell label={`ot-${empId}`} value={clean ? num(r.computed?.ot_hours) : String(pv.ot)} /></td>
-                  <td style={{ ...td, textAlign: "right" }}><ComputedCell label={`vac-${empId}`} value={clean ? num(r.computed?.vacation_hours) : String(pv.vac)} /></td>
-                  <td style={{ ...td, textAlign: "right" }}><MoneyCell
+                  <TableCell className="text-right"><ComputedCell label={`reg-${empId}`} value={clean ? num(r.computed?.reg_hours) : String(pv.reg)} /></TableCell>
+                  <TableCell className="text-right"><ComputedCell label={`ot-${empId}`} value={clean ? num(r.computed?.ot_hours) : String(pv.ot)} /></TableCell>
+                  <TableCell className="text-right"><ComputedCell label={`vac-${empId}`} value={clean ? num(r.computed?.vacation_hours) : String(pv.vac)} /></TableCell>
+                  <TableCell className="text-right"><MoneyCell
                       value={extras[empId]?.bonus ?? "0"}
                       readOnly={locked}
                       label={`bonus-${empId}`}
                       prefix="$"
                       onCommit={(v) => setExtras((p) => ({ ...p, [empId]: { ...p[empId], bonus: v } }))}
                     />
-                  </td>
-                  <td style={{ ...td, textAlign: "right" }}><ComputedCell label={`hol-${empId}`} value={clean ? num(r.computed?.holiday_hours) : String(pv.hol)} /></td>
-                  <td style={{ ...td, textAlign: "right" }}><MoneyCell
+                  </TableCell>
+                  <TableCell className="text-right"><ComputedCell label={`hol-${empId}`} value={clean ? num(r.computed?.holiday_hours) : String(pv.hol)} /></TableCell>
+                  <TableCell className="text-right"><MoneyCell
                       value={extras[empId]?.reimb ?? "0"}
                       readOnly={locked}
                       label={`reimb-${empId}`}
                       prefix="$"
                       onCommit={(v) => setExtras((p) => ({ ...p, [empId]: { ...p[empId], reimb: v } }))}
                     />
-                  </td>
-                  <td style={{ ...td, textAlign: "right" }}><ComputedCell label={`sick-${empId}`} value={clean ? num(r.computed?.sick_safe_paid_hours) : String(pv.sick)} /></td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right"><ComputedCell label={`sick-${empId}`} value={clean ? num(r.computed?.sick_safe_paid_hours) : String(pv.sick)} /></TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
-        </div>
+          </TableBody>
+        </Table>
+        </Card>
       )}
     </section>
   );
