@@ -49,7 +49,9 @@ function findKey() {
 }
 
 const KEY = findKey();
-sh("cmd", ["/c", `icacls "${KEY}" /inheritance:r /grant:r ${process.env.USERNAME}:F >nul`], { quiet: true });
+const who = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}` : `${process.env.USERNAME}`;
+const acl = spawnSync("cmd", ["/c", `icacls "${KEY}" /inheritance:r /grant:r ${who}:F >nul`], { stdio: "pipe", encoding: "utf8" });
+if (acl.status !== 0) log("warning: could not lock key file permissions, continuing anyway...");
 const sshBase = ["-i", KEY, "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", `${USER}@${HOST}`];
 const ssh = (script) => sh("ssh", [...sshBase, `echo ${Buffer.from(script).toString("base64")} | base64 -d | bash -s`]);
 

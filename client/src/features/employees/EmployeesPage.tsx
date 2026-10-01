@@ -51,7 +51,7 @@ const emptyForm = { employee_number: "", full_name: "", hire_date: "", pay: "H",
 function SickBalance({ leave }: { leave: LeaveData }) {
   const remaining = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
   const accrued = (leave.ledger ?? [])
-    .filter((l) => l.leave_type === "SICK_SAFE_PAID" && l.entry_type === "accrual")
+    .filter((l) => l.leave_type === "SICK_SAFE_PAID" && String(l.entry_type).toLowerCase() === "accrual")
     .reduce((t, l) => t + Math.max(0, Number(l.hours) || 0), 0);
   const total = accrued > 0 ? accrued : Math.max(remaining, 0);
   const pct = total > 0 ? (remaining / total) * 100 : 0;

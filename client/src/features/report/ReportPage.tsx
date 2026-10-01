@@ -113,7 +113,9 @@ function LeaveDetail({ leave }: { leave: LeaveData }) {
   const bal = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
   // Usage rows carry the sick date in `note` (reason = work_date); fall back
   // to the ledger date for rows without a date-like note.
-  const taken = (leave.ledger ?? []).filter((l) => l.entry_type === "usage");
+  // entry_type arrives in the ENUM's declared case (USAGE) while mocks and
+  // older rows may use lowercase — compare case-insensitively.
+  const taken = (leave.ledger ?? []).filter((l) => String(l.entry_type).toLowerCase() === "usage");
   return (
     <div className="px-1 py-1 text-sm">
       <div>Sick: {bal} of 40 hours remaining</div>
