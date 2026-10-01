@@ -225,7 +225,6 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
   const leave = sum((r) => r.sick) + sum((r) => r.vac) + hol;
   const extra = sum((r) => r.bonus) + sum((r) => r.reimb);
   const worked = Math.round((reg + ot) * 100) / 100;
-  const otPct = worked > 0 ? ((ot / worked) * 100).toFixed(1) : "0.0";
   const total = Math.round((reg + ot + hol) * 100) / 100;
   const seg = (v: number): string => (total > 0 ? `${Math.max(0, Math.min(100, (v / total) * 100))}%` : "0%");
   const cards = [
@@ -243,11 +242,7 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
       icon: AlertTriangle,
       iconClass: "text-amber-500",
       valueClass: "text-amber-600 dark:text-amber-500",
-      badge: (
-        <Badge className="mt-1 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
-          {otPct}% OT
-        </Badge>
-      ),
+      badge: null as React.ReactNode,
     },
     {
       label: "Leave & PTO",
