@@ -187,18 +187,28 @@ async function leaveOverdraw(db: Db, periodId: number): Promise<Alert[]> {
 async function postSubmitEdit(db: Db, period: PeriodRow): Promise<Alert[]> {
   if ((period.status !== "SUBMITTED" && period.status !== "APPROVED") || !period.submitted_at) return [];
   const [rows] = await db.query(
-    `SELECT entity_table, action, occurred_at, actor_user_id FROM audit_log
-      WHERE entity_table IN ('timecard_entries', 'timecard_days')
-        AND occurred_at > ?
-      ORDER BY occurred_at, id`,
+    `SELECT a.entity_table, a.action, a.occurred_at, a.actor_user_id,
+            e.id AS employee_id, e.full_name AS employee_name
+       FROM audit_log a
+       LEFT JOIN timecard_entries te
+         ON a.entity_table = 'timecard_entries' AND te.id = a.entity_id
+       LEFT JOIN timecard_days td
+         ON a.entity_table = 'timecard_days' AND td.id = a.entity_id
+       LEFT JOIN timecard_entries te2
+         ON te2.id = td.entry_id
+       LEFT JOIN employees e
+         ON e.id = COALESCE(te.employee_id, te2.employee_id)
+      WHERE a.entity_table IN ('timecard_entries', 'timecard_days')
+        AND a.occurred_at > ?
+      ORDER BY a.occurred_at, a.id`,
     [period.submitted_at]
   );
   return (rows as any[]).map((r) => ({
     code: "post_submit_edit" as const,
     severity: "red" as const,
-    employee_id: null,
-    employee_name: null,
-    message: `Edited after submission: ${r.entity_table} ${r.action}`,
+    employee_id: r.employee_id ?? null,
+    employee_name: r.employee_name ?? null,
+    message: `Timecard ${r.action === "timecard.create" ? "added" : "edited"} after submission`,
     detail: { occurred_at: new Date(r.occurred_at).toISOString(), actor_user_id: r.actor_user_id },
   }));
 }

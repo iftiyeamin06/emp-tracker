@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 .local/
+scripts/emp_key.pem
+scripts/*.tar.gz

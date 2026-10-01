@@ -82,7 +82,7 @@ function KpiCards({ rows }) {
     const cards = [
         { label: "Total Worked Hours", value: String(Math.round((reg + ot) * 100) / 100), alert: false },
         { label: "Overtime Hours", value: String(ot), alert: ot > 0 },
-        { label: "Leave Used", value: String(Math.round(leave * 100) / 100), alert: false },
+        { label: "Leave Used Hours", value: String(Math.round(leave * 100) / 100), alert: false },
         { label: "Extra Payouts", value: money(String(extra)), alert: false },
     ];
     return (_jsx("div", { className: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4", children: cards.map((kpi) => (_jsxs(Card, { className: "kpi-card p-4", children: [_jsx("div", { className: "text-sm text-muted-foreground", children: kpi.label }), _jsx("div", { className: kpi.alert

@@ -179,7 +179,7 @@ describe("alerts (integration, rolled back)", () => {
       const edits = alerts.filter((a) => a.code === "post_submit_edit");
       assert.equal(edits.length, 1);
       assert.equal(edits[0].severity, "red");
-      assert.equal(edits[0].message, "Edited after submission: timecard_entries timecard.update");
+      assert.equal(edits[0].message, "Timecard edited after submission");
       assert.equal((edits[0].detail as any).actor_user_id, actor);
       assert.ok((edits[0].detail as any).occurred_at);
 
