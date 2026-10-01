@@ -77,7 +77,39 @@ describe("alerts (integration, rolled back)", () => {
     }
   });
 
-  it("SUBMITTED period -> awaiting_approval; APPROVED -> none", async () => {    const conn = await mysql.createConnection(connectionOptions());
+  it("holiday, vacation, sick and worked-holiday hours each raise an alert", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const period = await freshPeriod(conn);
+      const pid = period.id as number;
+      const { employee } = await createEmployee(conn, hire("LV" + Math.floor(Math.random() * 1e6)));
+      const eid = employee.id as number;
+      const [ins] = await conn.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, eid]);
+      const entryId = (ins as any).insertId;
+      const values = [
+        [entryId, "2031-10-04", "HOLIDAY", 8],
+        [entryId, "2031-10-05", "SICK_SAFE_PAID", 8],
+        [entryId, "2031-10-06", "VACATION", 8],
+        [entryId, "2031-10-07", "HOLIDAY_WORKED", 8],
+      ];
+      await conn.query("INSERT INTO timecard_days (entry_id, work_date, day_type, hours) VALUES ?", [values]);
+      const alerts = (await getAlerts(conn, pid)).filter((a) => a.employee_id === eid);
+      const byCode: Record<string, any> = Object.fromEntries(alerts.map((a) => [a.code, a]));
+      assert.equal(alerts.length, 4); // HW8 counts as worked (8h, no OT) + 4 leave buckets
+      assert.equal(byCode.holiday.message, "8 holiday hours this week");
+      assert.equal(byCode.vacation.message, "8 vacation hours this week");
+      assert.equal(byCode.sick.message, "8 sick hours this week");
+      assert.equal(byCode.holiday_worked.message, "8 holiday-worked hours this week");
+      for (const a of alerts) assert.equal(a.severity, "amber");
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("SUBMITTED period -> awaiting_approval; APPROVED -> none", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
     await conn.beginTransaction();
     const actor = await realActor(conn);
     try {

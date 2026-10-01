@@ -4,7 +4,7 @@ import type { Db } from "../employees/employees.service.js";
 // them sorted red > amber > yellow (stable — within-severity order is the
 // collection order below).
 export interface Alert {
-  code: "missing_entry" | "overtime" | "awaiting_approval" | "manual_ot_override" | "leave_overdraw" | "post_submit_edit";
+  code: "missing_entry" | "overtime" | "holiday" | "vacation" | "sick" | "holiday_worked" | "awaiting_approval" | "manual_ot_override" | "leave_overdraw" | "post_submit_edit";
   severity: "red" | "amber" | "yellow";
   employee_id: number | null;
   employee_name: string | null;
@@ -65,26 +65,43 @@ async function missingEntry(db: Db, period: PeriodRow): Promise<Alert[]> {
 // Surface any overtime amount the report view calculates. In particular,
 // the view can calculate OT when no compensation row covers period end, so
 // filtering on overtime_status here would hide OT already shown in the report.
+// Same pass also flags paid time-off buckets (holiday, vacation, sick,
+// worked-holiday) so a reviewer sees every non-regular hour at a glance.
 async function overtime(db: Db, periodId: number): Promise<Alert[]> {
   const [rows] = await db.query(
-    `SELECT w.employee_id, e.full_name, w.ot_hours
+    `SELECT w.employee_id, e.full_name, w.ot_hours,
+            w.holiday_hours, w.vacation_hours, w.sick_safe_paid_hours, w.holiday_worked_hours
        FROM timecard_weekly w
        JOIN employees e ON e.id = w.employee_id
-      WHERE w.pay_period_id = ? AND w.ot_hours > 0
+      WHERE w.pay_period_id = ?
+        AND (w.ot_hours > 0 OR w.holiday_hours > 0 OR w.vacation_hours > 0
+             OR w.sick_safe_paid_hours > 0 OR w.holiday_worked_hours > 0)
       ORDER BY e.full_name, e.id`,
     [periodId]
   );
-  return (rows as any[]).map((r) => {
-    const ot = num(r.ot_hours);
-    return {
-      code: "overtime" as const,
-      severity: "amber" as const,
-      employee_id: r.employee_id,
-      employee_name: r.full_name,
-      message: `${ot} OT hours this week`,
-      detail: { ot_hours: ot },
-    };
-  });
+  const out: Alert[] = [];
+  for (const r of rows as any[]) {
+    const buckets: { code: Alert["code"]; hours: number; message: string; detail: Record<string, unknown> }[] = [
+      { code: "overtime", hours: num(r.ot_hours), message: `${num(r.ot_hours)} OT hours this week`, detail: { ot_hours: num(r.ot_hours) } },
+      { code: "holiday", hours: num(r.holiday_hours), message: `${num(r.holiday_hours)} holiday hours this week`, detail: { holiday_hours: num(r.holiday_hours) } },
+      { code: "vacation", hours: num(r.vacation_hours), message: `${num(r.vacation_hours)} vacation hours this week`, detail: { vacation_hours: num(r.vacation_hours) } },
+      { code: "sick", hours: num(r.sick_safe_paid_hours), message: `${num(r.sick_safe_paid_hours)} sick hours this week`, detail: { sick_hours: num(r.sick_safe_paid_hours) } },
+      { code: "holiday_worked", hours: num(r.holiday_worked_hours), message: `${num(r.holiday_worked_hours)} holiday-worked hours this week`, detail: { holiday_worked_hours: num(r.holiday_worked_hours) } },
+    ];
+    for (const b of buckets) {
+      if (b.hours > 0) {
+        out.push({
+          code: b.code,
+          severity: "amber" as const,
+          employee_id: r.employee_id,
+          employee_name: r.full_name,
+          message: b.message,
+          detail: b.detail,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 // SUBMITTED (and only SUBMITTED) periods waiting on the owner.
