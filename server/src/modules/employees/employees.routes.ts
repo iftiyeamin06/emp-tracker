@@ -72,13 +72,22 @@ employeeRoutes.patch("/:id", requireAuth, requireRole("ADMIN"), async (req, res,
     const [[before]] = await conn.query("SELECT * FROM employees WHERE id = ? FOR UPDATE", [id]) as any;
     if (!before) { await conn.rollback(); return res.status(404).json({ error: "employee_not_found" }); }
     const [[beforeComp]] = await conn.query("SELECT * FROM employee_compensation WHERE employee_id = ? AND effective_to IS NULL ORDER BY effective_from DESC LIMIT 1 FOR UPDATE", [id]) as any;
-    const today = new Date().toISOString().slice(0, 10);
+    // DATE arrives as a Date object ("Mon Jan 05 ..."), never "YYYY-MM-DD" —
+    // format calendar parts before comparing, same as setTermination.
+    const cal = (v: unknown): string => {
+      if (typeof v === "string") return v.slice(0, 10);
+      const d = new Date(v as any);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const now = new Date();
+    const today = cal(now);
+    const past = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yesterday = cal(past);
     await conn.query("UPDATE employees SET employee_number = ?, full_name = ?, hire_date = ?, payment_method = ? WHERE id = ?", [employee_number.trim(), full_name.trim(), hire_date, payment_method, id]);
     if (beforeComp) {
-      if (String(beforeComp.effective_from).slice(0, 10) >= today) {
+      if (cal(beforeComp.effective_from) >= today) {
         await conn.query("UPDATE employee_compensation SET effective_from = ?, pay_type = ?, rate = ?, overtime_status = ?, classification = ? WHERE id = ?", [today, compensation.pay_type, compensation.rate, compensation.overtime_status, compensation.classification || null, beforeComp.id]);
       } else {
-        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
         await conn.query("UPDATE employee_compensation SET effective_to = ? WHERE id = ?", [yesterday, beforeComp.id]);
         await conn.query("INSERT INTO employee_compensation (employee_id, effective_from, pay_type, rate, overtime_status, classification, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)", [id, today, compensation.pay_type, compensation.rate, compensation.overtime_status, compensation.classification || null, req.session.user!.id]);
       }

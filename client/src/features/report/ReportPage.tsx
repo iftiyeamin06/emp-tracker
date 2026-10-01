@@ -296,32 +296,54 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
   const total = Math.round((reg + ot + hol) * 100) / 100;
   const seg = (v: number): string => (total > 0 ? `${Math.max(0, Math.min(100, (v / total) * 100))}%` : "0%");
   const cards = [
-    { label: "Total Worked Hours", value: String(worked), icon: Clock, accent: "border-l-blue-500", badge: null as React.ReactNode },
+    {
+      label: "Total Worked Hours",
+      value: String(worked),
+      icon: Clock,
+      iconClass: "text-slate-400 dark:text-slate-500",
+      valueClass: "text-slate-900 dark:text-slate-50",
+      badge: null as React.ReactNode,
+    },
     {
       label: "Overtime Hours",
       value: String(ot),
       icon: AlertTriangle,
-      accent: "border-l-amber-500",
+      iconClass: "text-amber-500",
+      valueClass: "text-amber-600 dark:text-amber-500",
       badge: (
-        <Badge className="mt-1 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300">
+        <Badge className="mt-1 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
           {otPct}% OT
         </Badge>
       ),
     },
-    { label: "Leave & PTO", value: String(leave), icon: Calendar, accent: "border-l-purple-500", badge: null as React.ReactNode },
-    { label: "Est. Gross Payroll", value: money(String(extra)), icon: DollarSign, accent: "border-l-emerald-500", badge: null as React.ReactNode },
+    {
+      label: "Leave & PTO",
+      value: String(leave),
+      icon: Calendar,
+      iconClass: "text-slate-400 dark:text-slate-500",
+      valueClass: "text-slate-900 dark:text-slate-50",
+      badge: null as React.ReactNode,
+    },
+    {
+      label: "Est. Gross Payroll",
+      value: money(String(extra)),
+      icon: DollarSign,
+      iconClass: "text-slate-400 dark:text-slate-500",
+      valueClass: "text-slate-900 dark:text-slate-50",
+      badge: null as React.ReactNode,
+    },
   ];
   return (
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((kpi) => (
-          <Card key={kpi.label} className={`kpi-card border-l-4 p-0 ${kpi.accent}`}>
+          <Card key={kpi.label} className="kpi-card border border-slate-200 bg-white p-0 shadow-xs dark:border-slate-800 dark:bg-slate-950">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{kpi.label}</CardTitle>
-              <kpi.icon aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{kpi.label}</CardTitle>
+              <kpi.icon aria-hidden className={`h-4 w-4 shrink-0 ${kpi.iconClass}`} />
             </CardHeader>
             <CardContent className="p-4 pt-0">
-              <div className="kpi-card-value text-2xl font-semibold">{kpi.value}</div>
+              <div className={`kpi-card-value text-2xl font-bold ${kpi.valueClass}`}>{kpi.value}</div>
               {kpi.badge}
             </CardContent>
           </Card>
@@ -337,19 +359,19 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
           role="img"
           aria-label={`Regular ${reg} hours, overtime ${ot} hours, holiday ${hol} hours`}
         >
-          <div className="bg-blue-500" style={{ width: seg(reg) }} />
+          <div className="bg-slate-800 dark:bg-slate-200" style={{ width: seg(reg) }} />
           <div className="bg-amber-500" style={{ width: seg(ot) }} />
-          <div className="bg-purple-500" style={{ width: seg(hol) }} />
+          <div className="bg-slate-300 dark:bg-slate-700" style={{ width: seg(hol) }} />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-blue-500" />Reg ({reg}h)
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-slate-800" />Reg ({reg}h)
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-amber-500" />OT ({ot}h)
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-purple-500" />Holiday ({hol}h)
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-slate-300" />Holiday ({hol}h)
           </span>
         </div>
       </Card>
@@ -702,7 +724,7 @@ export default function ReportPage() {
       <div className="flex flex-wrap gap-2">
         {mode === "weekly" && status === "OPEN" && <Badge className="border-transparent bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100">🟡 OPEN (Awaiting Submission)</Badge>}
         {mode === "weekly" && status === "SUBMITTED" && <Badge className="border-transparent bg-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-900 dark:text-blue-100">🔵 SUBMITTED (Pending CEO Approval)</Badge>}
-        {mode === "weekly" && status === "APPROVED" && <Badge className="border-transparent bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900 dark:text-green-100">🟢 APPROVED</Badge>}
+        {mode === "weekly" && status === "APPROVED" && <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">🟢 APPROVED</Badge>}
       </div>
       {loading && <Skeleton rows={5} cols={8} />}
       {error && <Notice title="Something didn't load" message={error} onRetry={() => setReloadKey((k) => k + 1)} />}

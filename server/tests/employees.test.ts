@@ -1,7 +1,9 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import argon2 from "argon2";
 import mysql from "mysql2/promise";
-import { connectionOptions } from "../src/db/pool.js";
+import { connectionOptions, pool } from "../src/db/pool.js";
+import { createApp } from "../src/app.js";
 import { writeAudit } from "../src/lib/audit.js";
 import { createEmployee, deleteEmployee, listEmployees, setTermination } from "../src/modules/employees/employees.service.js";
 
@@ -208,6 +210,156 @@ describe("employees (integration, rolled back)", () => {
     } finally {
       await conn.rollback();
       await conn.end();
+    }
+  });
+});
+
+// PATCH /api/employees/:id must version compensation (close old row, open a
+// new one effective today) instead of rewriting history in place — past
+// periods keep their classification in timecard_weekly. HTTP-level: commits,
+// so it cleans up after itself like the alerts http suite.
+describe("PATCH employee compensation versioning (http)", () => {
+  process.env.SESSION_SECRET ??= "test-secret";
+  const email = `patchemp${Date.now()}@example.com`;
+  const empNum = `PE${String(Date.now()).slice(-6)}`;
+  let base = "";
+  let server: any;
+  let app: any;
+  let cookie = "";
+  let empId = 0;
+  let pastEntry = 0;
+  let futureEntry = 0;
+  let pastPeriod = 0;
+  let futurePeriod = 0;
+
+  const cal = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const shift = (n: number): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return cal(d);
+  };
+
+  before(async () => {
+    const db = await mysql.createConnection(connectionOptions());
+    try {
+      const hash = await argon2.hash("test123", { type: argon2.argon2id });
+      await db.query("INSERT INTO users (email, full_name, password_hash, role) VALUES (?, 'Patch HTTP', ?, 'ADMIN')", [email, hash]);
+    } finally {
+      await db.end();
+    }
+    server = await new Promise<any>((res) => {
+      app = createApp();
+      const s = app.listen(0, "127.0.0.1", () => res(s));
+    });
+    base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "test123" }),
+    });
+    assert.equal(login.status, 200);
+    cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+    assert.ok(cookie.length > 0);
+  });
+
+  after(async () => {
+    try {
+      const db = await mysql.createConnection(connectionOptions());
+      try {
+        if (pastEntry || futureEntry) {
+          await db.query("DELETE FROM timecard_days WHERE entry_id IN (?, ?)", [pastEntry, futureEntry]);
+          await db.query("DELETE FROM timecard_entries WHERE id IN (?, ?)", [pastEntry, futureEntry]);
+        }
+        if (empId) {
+          await db.query("DELETE FROM leave_ledger WHERE employee_id = ?", [empId]);
+          await db.query("DELETE FROM employee_compensation WHERE employee_id = ?", [empId]);
+          await db.query("DELETE FROM employees WHERE id = ?", [empId]);
+        }
+        if (pastPeriod || futurePeriod) await db.query("DELETE FROM pay_periods WHERE id IN (?, ?)", [pastPeriod, futurePeriod]);
+        await db.query("DELETE FROM users WHERE email = ?", [email]);
+      } finally {
+        await db.end();
+      }
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise<void>((res) => server.close(() => res()));
+      app.locals.sessionStore.close();
+      await pool.end();
+    }
+  });
+
+  it("editing comp closes the old row and past periods keep their OT", async () => {
+    const api = (path: string, init?: RequestInit) =>
+      fetch(`${base}${path}`, {
+        ...init,
+        headers: { "Content-Type": "application/json", Cookie: cookie, ...(init?.headers ?? {}) },
+      });
+    const hired = await api("/api/employees", {
+      method: "POST",
+      body: JSON.stringify({
+        employee_number: empNum,
+        full_name: "Patch Person",
+        hire_date: "2026-01-05",
+        payment_method: "DIRECT_DEPOSIT",
+        compensation: { pay_type: "HOURLY", rate: 18, overtime_status: "NON_EXEMPT" },
+      }),
+    });
+    assert.equal(hired.status, 201);
+    empId = ((await hired.json()) as any).data.employee.id;
+
+    const db = await mysql.createConnection(connectionOptions());
+    try {
+      const mkEntry = async (start: string, end: string, pay: string): Promise<{ pid: number; nid: number }> => {
+        const [rp] = await db.query("INSERT INTO pay_periods (start_date, end_date, pay_date) VALUES (?, ?, ?)", [start, end, pay]);
+        const pid = (rp as any).insertId;
+        const [rn] = await db.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, empId]);
+        const nid = (rn as any).insertId;
+        await db.query("INSERT INTO timecard_days (entry_id, work_date, day_type, hours) VALUES (?, '2026-09-21', 'WORK', 9), (?, '2026-09-22', 'WORK', 9), (?, '2026-09-23', 'WORK', 9), (?, '2026-09-24', 'WORK', 9), (?, '2026-09-25', 'WORK', 9)", [nid, nid, nid, nid, nid]);
+        return { pid, nid };
+      };
+      ({ pid: pastPeriod, nid: pastEntry } = await mkEntry(shift(-13), shift(-7), shift(-5)));
+      ({ pid: futurePeriod, nid: futureEntry } = await mkEntry(shift(1), shift(7), shift(9)));
+    } finally {
+      await db.end();
+    }
+
+    const patched = await api(`/api/employees/${empId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        employee_number: empNum,
+        full_name: "Patch Person",
+        hire_date: "2026-01-05",
+        payment_method: "DIRECT_DEPOSIT",
+        compensation: { pay_type: "SALARY", rate: 1000, overtime_status: "EXEMPT" },
+      }),
+    });
+    assert.equal(patched.status, 200);
+
+    const db2 = await mysql.createConnection(connectionOptions());
+    try {
+      const [rows] = await db2.query(
+        "SELECT overtime_status, DATE_FORMAT(effective_from, '%Y-%m-%d') AS f, DATE_FORMAT(effective_to, '%Y-%m-%d') AS t FROM employee_compensation WHERE employee_id = ? ORDER BY effective_from",
+        [empId]
+      );
+      const comps = rows as any[];
+      assert.equal(comps.length, 2); // old row closed, new row opened — never rewritten in place
+      assert.equal(comps[0].overtime_status, "NON_EXEMPT");
+      assert.equal(comps[0].t, shift(-1));
+      assert.equal(comps[1].overtime_status, "EXEMPT");
+      assert.equal(comps[1].f, shift(0));
+      assert.equal(comps[1].t, null);
+
+      const [past] = await db2.query("SELECT overtime_status, reg_hours, ot_hours FROM timecard_weekly WHERE entry_id = ?", [pastEntry]);
+      assert.equal((past as any[])[0].overtime_status, "NON_EXEMPT");
+      assert.equal(Number((past as any[])[0].reg_hours), 40);
+      assert.equal(Number((past as any[])[0].ot_hours), 5); // history keeps its OT
+      const [future] = await db2.query("SELECT overtime_status, reg_hours, ot_hours FROM timecard_weekly WHERE entry_id = ?", [futureEntry]);
+      assert.equal((future as any[])[0].overtime_status, "EXEMPT");
+      assert.equal(Number((future as any[])[0].reg_hours), 45);
+      assert.equal(Number((future as any[])[0].ot_hours), 0);
+    } finally {
+      await db2.end();
     }
   });
 });

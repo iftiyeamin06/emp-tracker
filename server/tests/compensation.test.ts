@@ -28,4 +28,48 @@ describe("compensation history (integration, rolled back)", () => {
       await conn.end();
     }
   });
+
+  it("EXEMPT salaried employee working 50h gets reg 50, ot 0", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const [re] = await conn.query("INSERT INTO employees (employee_number, full_name, hire_date) VALUES ('TC2','Exempt Sal','2026-01-05')");
+      const eid = (re as any).insertId;
+      await conn.query(
+        "INSERT INTO employee_compensation (employee_id, effective_from, effective_to, pay_type, rate, overtime_status) VALUES (?, '2026-01-01', NULL, 'SALARY', 1000.00, 'EXEMPT')",
+        [eid]
+      );
+      const [rp] = await conn.query("INSERT INTO pay_periods (start_date, end_date, pay_date) VALUES ('2030-02-02','2030-02-08','2030-02-12')");
+      const pid = (rp as any).insertId;
+      const [rn] = await conn.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, eid]);
+      const nid = (rn as any).insertId;
+      await conn.query("INSERT INTO timecard_days (entry_id, work_date, day_type, hours) VALUES (?, '2026-09-21', 'WORK', 10), (?, '2026-09-22', 'WORK', 10), (?, '2026-09-23', 'WORK', 10), (?, '2026-09-24', 'WORK', 10), (?, '2026-09-25', 'WORK', 10)", [nid, nid, nid, nid, nid]);
+      const [w] = await conn.query("SELECT reg_hours, ot_hours FROM timecard_weekly WHERE entry_id=?", [nid]);
+      assert.equal(Number((w as any[])[0].reg_hours), 50);
+      assert.equal(Number((w as any[])[0].ot_hours), 0);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
+
+  it("no comp row covering the period means reg worked, ot 0", async () => {
+    const conn = await mysql.createConnection(connectionOptions());
+    await conn.beginTransaction();
+    try {
+      const [re] = await conn.query("INSERT INTO employees (employee_number, full_name, hire_date) VALUES ('TC3','No Comp','2026-01-05')");
+      const eid = (re as any).insertId;
+      const [rp] = await conn.query("INSERT INTO pay_periods (start_date, end_date, pay_date) VALUES ('2030-03-02','2030-03-08','2030-03-12')");
+      const pid = (rp as any).insertId;
+      const [rn] = await conn.query("INSERT INTO timecard_entries (pay_period_id, employee_id) VALUES (?, ?)", [pid, eid]);
+      const nid = (rn as any).insertId;
+      await conn.query("INSERT INTO timecard_days (entry_id, work_date, day_type, hours) VALUES (?, '2026-09-21', 'WORK', 9), (?, '2026-09-22', 'WORK', 9), (?, '2026-09-23', 'WORK', 9), (?, '2026-09-24', 'WORK', 9), (?, '2026-09-25', 'WORK', 9)", [nid, nid, nid, nid, nid]);
+      const [w] = await conn.query("SELECT reg_hours, ot_hours FROM timecard_weekly WHERE entry_id=?", [nid]);
+      assert.equal(Number((w as any[])[0].reg_hours), 45);
+      assert.equal(Number((w as any[])[0].ot_hours), 0);
+    } finally {
+      await conn.rollback();
+      await conn.end();
+    }
+  });
 });

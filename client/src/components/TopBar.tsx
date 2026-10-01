@@ -62,11 +62,7 @@ export function TopBar({ title, me, onLogout, darkMode, onToggleTheme }: { title
         <span className="mr-1 text-sm text-muted-foreground">{me.email}</span>
         <Badge
           variant="outline"
-          className={
-            me.role === "OWNER"
-              ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
-              : "border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-300"
-          }
+          className="border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
         >
           {me.role}
         </Badge>
