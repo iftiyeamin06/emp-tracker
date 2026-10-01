@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Clock, Lock } from "lucide-react";
 import { get, post, put } from "../../api/client";
 import { availableYears, defaultYear, filterPeriods, groupPeriods } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
@@ -6,7 +7,7 @@ import { hoverCss } from "../../components/theme";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { formatDay, leaveHoursOf, parseCell, workedHoursOf } from "./dayCodes";
 
 interface Period {
@@ -85,6 +86,7 @@ const num = (v: unknown): string => {
 // cells, but never editable — they are derived (API view when clean, local
 // preview when dirty), not typed.
 function ComputedCell({ label, value }: { label: string; value: string }) {
+  const empty = Number(value) === 0;
   return (
     <Input
       aria-label={label}
@@ -92,7 +94,7 @@ function ComputedCell({ label, value }: { label: string; value: string }) {
       disabled
       readOnly
       size={5}
-      className="min-w-[34px] border-muted bg-muted px-0.5 text-center text-muted-foreground"
+      className={`min-w-[34px] border-muted bg-muted px-0.5 text-center text-muted-foreground${empty ? " text-muted-foreground/50" : ""}`}
     />
   );
 }
@@ -123,7 +125,7 @@ function DayCell({
       placeholder="–"
       title="8 = worked day, H8 holiday, S8 sick, V8 vacation — or type hours like 9"
       size={4}
-      className="min-w-[34px] px-0.5 text-center"
+      className="min-w-[34px] px-0.5 text-center transition-colors hover:border-primary/60"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -312,6 +314,16 @@ export default function TimecardPage() {
 
   const dirty = baseline !== "" && JSON.stringify({ c: cells, x: extras }) !== baseline;
   const dates = period ? weekDates(cal(period.start_date)) : [];
+
+  // Operational strip stats (server-computed values, never the local preview).
+  const statNum = (v: unknown): number => {
+    const n = Number(v ?? 0);
+    return Number.isNaN(n) ? 0 : Math.round(n * 100) / 100;
+  };
+  const periodHours =
+    Math.round(baseRows.reduce((t, r) => t + statNum(r.computed?.reg_hours) + statNum(r.computed?.ot_hours), 0) * 100) / 100;
+  const flaggedOt = baseRows.filter((r) => statNum(r.computed?.ot_hours) > 0).length;
+  const totalOf = (f: (r: GridRow) => unknown): string => String(Math.round(baseRows.reduce((t, r) => t + statNum(f(r)), 0) * 100) / 100);
 
   // v1 wire codes (route maps SICK/HW8 to the DB enum). Empty clears the day by
   // sending a 0-hour WORK row — the route deletes + reinserts per date.
@@ -604,7 +616,16 @@ export default function TimecardPage() {
       )}
       {saveError && <Notice title="Couldn't save" message={saveError} />}
       {submitError && <Notice title="Couldn't submit" message={submitError} />}
-      {period && period.status !== "OPEN" && <p className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-amber-800">Period {period.status} — read only</p>}
+      {period && period.status !== "OPEN" && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-100 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          {period.status === "APPROVED" ? (
+            <Lock aria-hidden className="h-4 w-4 shrink-0" />
+          ) : (
+            <Clock aria-hidden className="h-4 w-4 shrink-0" />
+          )}
+          <p className="m-0">Period {period.status} — read only</p>
+        </div>
+      )}
       {loading && <Skeleton rows={6} cols={10} />}
       {error && <Notice title="Couldn't load timecards" message="Check your connection, then try again." onRetry={() => periodId != null && loadGrid(periodId)} />}
       {!loading && !error && periods.length === 0 && (
@@ -625,13 +646,29 @@ export default function TimecardPage() {
         </Card>
       )}
       {!loading && !error && baseRows.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Card className="p-4">
+            <div className="text-sm text-muted-foreground">Active Workers</div>
+            <div className="mt-1 text-2xl font-semibold">{baseRows.length}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-sm text-muted-foreground">Total Period Hours</div>
+            <div className="mt-1 text-2xl font-semibold">{periodHours}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-sm text-muted-foreground">Flagged Overtime</div>
+            <div className="mt-1 text-2xl font-semibold">{flaggedOt}</div>
+          </Card>
+        </div>
+      )}
+      {!loading && !error && baseRows.length > 0 && (
         <Card>
         <Table className="timecard-table">
           <TableHeader>
             <TableRow>
               <TableHead className="sticky left-0 z-[3] bg-card">Name</TableHead>
               {DOW.map((d) => (
-                <TableHead key={d}>{d}</TableHead>
+                <TableHead key={d} className="border-l border-border/50">{d}</TableHead>
               ))}
               <TableHead>Regular Hours</TableHead>
               <TableHead>Overtime Hours</TableHead>
@@ -685,6 +722,21 @@ export default function TimecardPage() {
               );
             })}
           </TableBody>
+          <TableFooter className="bg-muted/50 font-bold">
+            <TableRow>
+              <TableCell>Total</TableCell>
+              {dates.map((date) => (
+                <TableCell key={date} />
+              ))}
+              <TableCell className="text-right">{totalOf((r) => r.computed?.reg_hours)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.computed?.ot_hours)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.computed?.vacation_hours)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.entry?.bonus_amount)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.computed?.holiday_hours)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.entry?.reimbursement_amount)}</TableCell>
+              <TableCell className="text-right">{totalOf((r) => r.computed?.sick_safe_paid_hours)}</TableCell>
+            </TableRow>
+          </TableFooter>
         </Table>
         </Card>
       )}

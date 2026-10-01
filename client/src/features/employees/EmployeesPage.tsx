@@ -6,6 +6,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Progress } from "../../components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
 interface Employee {
@@ -35,7 +36,7 @@ const PAY_LABELS: Record<string, string> = { DIRECT_DEPOSIT: "Direct Deposit", C
 
 const money = (rate: unknown, payType: string): string => {
   const formatted = Number(rate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return payType === "SALARY" ? `SALARY $${formatted}/wk` : `HOURLY $${formatted}`;
+  return payType === "SALARY" ? `$${formatted} / wk` : `$${formatted} / hr`;
 };
 
 // Native select dressed like the shadcn Input. A Radix Select renders no
@@ -44,6 +45,29 @@ const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const emptyForm = { employee_number: "", full_name: "", hire_date: "", pay: "H", rate: "", overtime_status: "NON_EXEMPT", classification: "", payment_method: "DIRECT_DEPOSIT" };
+
+// Sick balance with a visual progress bar. The legacy sentence stays verbatim
+// (tests + screen readers); the bar and the Balance line are the new visual.
+function SickBalance({ leave }: { leave: LeaveData }) {
+  const remaining = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
+  const accrued = (leave.ledger ?? [])
+    .filter((l) => l.leave_type === "SICK_SAFE_PAID" && l.entry_type === "accrual")
+    .reduce((t, l) => t + Math.max(0, Number(l.hours) || 0), 0);
+  const total = accrued > 0 ? accrued : Math.max(remaining, 0);
+  const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const bar = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-destructive";
+  return (
+    <div className="space-y-2 text-sm">
+      <span>
+        Sick: {remaining} of 40 hours remaining
+      </span>
+      <Progress value={pct} indicatorClassName={bar} />
+      <span className="text-muted-foreground">
+        Sick Leave Balance: {remaining} of {total} hrs remaining
+      </span>
+    </div>
+  );
+}
 
 export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [rows, setRows] = useState<Employee[]>([]);
@@ -300,11 +324,11 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
                     <TableCell>{fmtDay(r.hire_date)}</TableCell>
                     <TableCell>{r.compensation ? money(r.compensation.rate, r.compensation.pay_type) : "—"}</TableCell>
                     <TableCell>{PAY_LABELS[r.payment_method] ?? r.payment_method}</TableCell>
-                    <TableCell>{r.compensation ? r.compensation.overtime_status : "—"}</TableCell>
+                    <TableCell>{r.compensation ? <Badge variant="outline" className="text-muted-foreground">{r.compensation.overtime_status}</Badge> : "—"}</TableCell>
                     <TableCell>
                       {term
-                        ? <Badge variant="secondary">Terminated {term}</Badge>
-                        : <Badge className="border-transparent bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900 dark:text-green-100">Active</Badge>}
+                        ? <Badge variant="secondary" className="border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">Terminated {term}</Badge>
+                        : <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Active</Badge>}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
                       <Button variant="ghost" size="sm" onClick={() => openProfile(r)}>
@@ -363,11 +387,7 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
                 <h4 className="mb-2 text-sm font-medium">Leave Balances</h4>
                 {leaveLoading && <span className="text-sm">Loading…</span>}
                 {leaveError && <Notice title="Couldn't load leave" message={leaveError} />}
-                {leave && (
-                  <span className="text-sm">
-                    Sick: {Number(leave.balances["SICK_SAFE_PAID"] ?? 0)} of 40 hours remaining
-                  </span>
-                )}
+                {leave && <SickBalance leave={leave} />}
               </Card>
               <h4 className="text-sm font-medium">Leave History</h4>
               {leaveLoading && <span className="text-sm">Loading…</span>}
@@ -389,8 +409,14 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
                       <TableRow key={i}>
                         <TableCell>{fmtDay(l.date)}</TableCell>
                         <TableCell>{l.leave_type}</TableCell>
-                        <TableCell>{Number(l.hours)}</TableCell>
-                        <TableCell>{l.note ?? "—"}</TableCell>
+                        <TableCell>
+                          {Number(l.hours) < 0 ? (
+                            <span className="font-medium text-red-600 dark:text-red-400">{Number(l.hours)} hrs</span>
+                          ) : (
+                            <span className="font-medium text-emerald-600 dark:text-emerald-400">+{Number(l.hours)} hrs</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{l.note ?? "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

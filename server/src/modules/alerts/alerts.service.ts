@@ -198,10 +198,13 @@ async function postSubmitEdit(db: Db, period: PeriodRow): Promise<Alert[]> {
          ON te2.id = td.entry_id
        LEFT JOIN employees e
          ON e.id = COALESCE(te.employee_id, te2.employee_id)
+       LEFT JOIN timecard_entries te_scope
+         ON te_scope.id = COALESCE(te.id, te2.id)
       WHERE a.entity_table IN ('timecard_entries', 'timecard_days')
         AND a.occurred_at > ?
+        AND te_scope.pay_period_id = ?
       ORDER BY a.occurred_at, a.id`,
-    [period.submitted_at]
+    [period.submitted_at, period.id]
   );
   return (rows as any[]).map((r) => ({
     code: "post_submit_edit" as const,

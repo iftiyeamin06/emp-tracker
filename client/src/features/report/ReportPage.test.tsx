@@ -53,6 +53,7 @@ describe("ReportPage", () => {
       return ok({ data: grid(approved ? "APPROVED" : "SUBMITTED") });
     });
     render(<ReportPage />);
+    await screen.findByText("🔵 SUBMITTED (Pending CEO Approval)"); // status settled: Approve enabled
     const btn = await screen.findByText("Approve");
     fireEvent.click(btn);
     expect(await screen.findByText("🟢 APPROVED")).toBeTruthy();

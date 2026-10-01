@@ -2,6 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { post } from "../api/client";
 import type { SessionUser } from "../features/auth/LoginPage";
 import { Logo } from "./polish";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
@@ -26,9 +27,17 @@ export function Sidebar({ role, route }: { role: SessionUser["role"]; route: str
               key={n.hash}
               asChild
               variant={active ? "secondary" : "ghost"}
-              className={cn("w-full justify-start", active && "font-semibold")}
+              className={cn(
+                "relative w-full justify-start",
+                active && "bg-accent font-semibold text-accent-foreground"
+              )}
             >
-              <a href={n.hash}>{n.label}</a>
+              <a href={n.hash}>
+                {active && (
+                  <span aria-hidden className="absolute inset-y-1 left-0 w-1 rounded-full bg-primary" />
+                )}
+                {n.label}
+              </a>
             </Button>
           );
         })}
@@ -47,12 +56,20 @@ export function TopBar({ title, me, onLogout, darkMode, onToggleTheme }: { title
   };
 
   return (
-    <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
+    <header className="flex items-center justify-between border-b border-border/60 bg-background/95 px-6 py-4 backdrop-blur-md">
       <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
       <div className="flex items-center gap-2">
-        <span className="mr-1 text-sm text-muted-foreground">
-          {me.email} ({me.role})
-        </span>
+        <span className="mr-1 text-sm text-muted-foreground">{me.email}</span>
+        <Badge
+          variant="outline"
+          className={
+            me.role === "OWNER"
+              ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
+              : "border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-300"
+          }
+        >
+          {me.role}
+        </Badge>
         <Button
           type="button"
           variant="outline"

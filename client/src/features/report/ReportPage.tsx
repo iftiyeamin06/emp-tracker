@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState } from "react";
+import { AlertTriangle, Calendar, Clock, DollarSign } from "lucide-react";
 import { get, post } from "../../api/client";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
 import { hoverCss } from "../../components/theme";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { availableYears, defaultYear, filterPeriods, fmtDay, fmtRange, groupPeriods } from "../../lib/periodOptions";
 
@@ -48,6 +49,19 @@ const money = (v: unknown): string => {
   const n = Number(v ?? 0);
   return "$" + (Number.isNaN(n) ? "0.00" : n.toFixed(2));
 };
+
+// Zero values show as a muted dash (see .zero-mute in theme hoverCss) while
+// the real text stays in the DOM for tests and screen readers.
+const isZeroish = (v: unknown): boolean => Number(String(v).replace(/[$,\s]/g, "")) === 0;
+
+function Zero({ value }: { value: string }) {
+  return isZeroish(value) ? <span className="zero-mute">{value}</span> : <>{value}</>;
+}
+
+function Ot({ value }: { value: string }) {
+  if (isZeroish(value)) return <Zero value={value} />;
+  return <span className="font-semibold text-amber-600 dark:text-amber-400">{value}</span>;
+}
 
 // Native select dressed like the shadcn Input (same reason as EmployeesPage:
 // Radix Select renders no native <select>).
@@ -233,13 +247,13 @@ function ReportTable({
                   </Button>
                   {r.cash && <CashBadge />}
                 </TableCell>
-                <TableCell className="text-right">{r.reg}</TableCell>
-                <TableCell className="text-right">{r.ot}</TableCell>
-                <TableCell className="text-right">{r.hol}</TableCell>
-                <TableCell className="text-right">{r.sick}</TableCell>
-                <TableCell className="text-right">{r.vac}</TableCell>
-                <TableCell className="text-right">{money(r.bonus)}</TableCell>
-                <TableCell className="text-right">{money(r.reimb)}</TableCell>
+                <TableCell className="text-right"><Zero value={r.reg} /></TableCell>
+                <TableCell className="text-right"><Ot value={r.ot} /></TableCell>
+                <TableCell className="text-right"><Zero value={r.hol} /></TableCell>
+                <TableCell className="text-right"><Zero value={r.sick} /></TableCell>
+                <TableCell className="text-right"><Zero value={r.vac} /></TableCell>
+                <TableCell className="text-right"><Zero value={money(r.bonus)} /></TableCell>
+                <TableCell className="text-right"><Zero value={money(r.reimb)} /></TableCell>
               </TableRow>
               {openLeave[r.employee_id ?? r.id] && (
                 <TableRow className="leave-detail-row bg-muted/50 hover:bg-muted/50">
@@ -255,13 +269,13 @@ function ReportTable({
         <TableFooter className="report-totals-row">
           <TableRow className="font-semibold">
             <TableCell>Total</TableCell>
-            <TableCell className="text-right">{total((r) => r.reg)}</TableCell>
-            <TableCell className="text-right">{total((r) => r.ot)}</TableCell>
-            <TableCell className="text-right">{total((r) => r.hol)}</TableCell>
-            <TableCell className="text-right">{total((r) => r.sick)}</TableCell>
-            <TableCell className="text-right">{total((r) => r.vac)}</TableCell>
-            <TableCell className="text-right">{money(total((r) => r.bonus))}</TableCell>
-            <TableCell className="text-right">{money(total((r) => r.reimb))}</TableCell>
+            <TableCell className="text-right"><Zero value={total((r) => r.reg)} /></TableCell>
+            <TableCell className="text-right"><Ot value={total((r) => r.ot)} /></TableCell>
+            <TableCell className="text-right"><Zero value={total((r) => r.hol)} /></TableCell>
+            <TableCell className="text-right"><Zero value={total((r) => r.sick)} /></TableCell>
+            <TableCell className="text-right"><Zero value={total((r) => r.vac)} /></TableCell>
+            <TableCell className="text-right"><Zero value={money(total((r) => r.bonus))} /></TableCell>
+            <TableCell className="text-right"><Zero value={money(total((r) => r.reimb))} /></TableCell>
           </TableRow>
         </TableFooter>
       </Table>
@@ -274,31 +288,72 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
     Math.round(rows.reduce((t, r) => t + Number(f(r) ?? 0), 0) * 100) / 100;
   const reg = sum((r) => r.reg);
   const ot = sum((r) => r.ot);
-  const leave = sum((r) => r.sick) + sum((r) => r.vac) + sum((r) => r.hol);
+  const hol = sum((r) => r.hol);
+  const leave = sum((r) => r.sick) + sum((r) => r.vac) + hol;
   const extra = sum((r) => r.bonus) + sum((r) => r.reimb);
+  const worked = Math.round((reg + ot) * 100) / 100;
+  const otPct = worked > 0 ? ((ot / worked) * 100).toFixed(1) : "0.0";
+  const total = Math.round((reg + ot + hol) * 100) / 100;
+  const seg = (v: number): string => (total > 0 ? `${Math.max(0, Math.min(100, (v / total) * 100))}%` : "0%");
   const cards = [
-    { label: "Total Worked Hours", value: String(Math.round((reg + ot) * 100) / 100), alert: false },
-    { label: "Overtime Hours", value: String(ot), alert: ot > 0 },
-    { label: "Leave Used Hours", value: String(Math.round(leave * 100) / 100), alert: false },
-    { label: "Extra Payouts", value: money(String(extra)), alert: false },
+    { label: "Total Worked Hours", value: String(worked), icon: Clock, accent: "border-l-blue-500", badge: null as React.ReactNode },
+    {
+      label: "Overtime Hours",
+      value: String(ot),
+      icon: AlertTriangle,
+      accent: "border-l-amber-500",
+      badge: (
+        <Badge className="mt-1 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300">
+          {otPct}% OT
+        </Badge>
+      ),
+    },
+    { label: "Leave & PTO", value: String(leave), icon: Calendar, accent: "border-l-purple-500", badge: null as React.ReactNode },
+    { label: "Est. Gross Payroll", value: money(String(extra)), icon: DollarSign, accent: "border-l-emerald-500", badge: null as React.ReactNode },
   ];
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map((kpi) => (
-        <Card key={kpi.label} className="kpi-card p-4">
-          <div className="text-sm text-muted-foreground">{kpi.label}</div>
-          <div
-            className={
-              kpi.alert
-                ? "kpi-card-value kpi-card-value-alert mt-1 inline-block rounded-md bg-amber-100 px-2 py-0.5 text-2xl font-semibold text-amber-700 dark:bg-amber-900"
-                : "kpi-card-value mt-1 inline-block text-2xl font-semibold"
-            }
-          >
-            {kpi.value}
-          </div>
-        </Card>
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((kpi) => (
+          <Card key={kpi.label} className={`kpi-card border-l-4 p-0 ${kpi.accent}`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{kpi.label}</CardTitle>
+              <kpi.icon aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              <div className="kpi-card-value text-2xl font-semibold">{kpi.value}</div>
+              {kpi.badge}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card className="p-4">
+        <div className="mb-2 flex items-center justify-between gap-2 text-sm">
+          <span className="font-semibold uppercase tracking-wide text-muted-foreground">Pay period hours distribution</span>
+          <span className="shrink-0 font-semibold">{total} Total Hours</span>
+        </div>
+        <div
+          className="flex h-3 w-full overflow-hidden rounded-full bg-muted"
+          role="img"
+          aria-label={`Regular ${reg} hours, overtime ${ot} hours, holiday ${hol} hours`}
+        >
+          <div className="bg-blue-500" style={{ width: seg(reg) }} />
+          <div className="bg-amber-500" style={{ width: seg(ot) }} />
+          <div className="bg-purple-500" style={{ width: seg(hol) }} />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-blue-500" />Reg ({reg}h)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-amber-500" />OT ({ot}h)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-purple-500" />Holiday ({hol}h)
+          </span>
+        </div>
+      </Card>
+    </>
   );
 }
 
@@ -596,9 +651,11 @@ export default function ReportPage() {
           )}
           {mode === "weekly" && (
             <>
-            <Button onClick={approve} disabled={status !== "SUBMITTED" || approving || reopening}>
+            {status === "SUBMITTED" && (
+            <Button onClick={approve} disabled={approving || reopening}>
               {approving ? "Approving…" : "Approve"}
             </Button>
+            )}
             <Button variant="outline" onClick={() => { setReopenOpen(true); setReopenError(""); }} disabled={(status !== "APPROVED" && status !== "SUBMITTED") || approving || reopening}>
               Reopen
             </Button>
@@ -691,13 +748,13 @@ export default function ReportPage() {
                       <TableRow key={`${r.employee_id}-${w.week_start}`} className="tc-row">
                         <TableCell></TableCell>
                         <TableCell>{fmtRange(w.week_start, w.week_end)}</TableCell>
-                        <TableCell className="text-right">{num(w.reg)}</TableCell>
-                        <TableCell className="text-right">{num(w.ot)}</TableCell>
-                        <TableCell className="text-right">{num(w.hol)}</TableCell>
-                        <TableCell className="text-right">{num(w.sick)}</TableCell>
-                        <TableCell className="text-right">{num(w.vac)}</TableCell>
-                        <TableCell className="text-right">{money(w.bonus)}</TableCell>
-                        <TableCell className="text-right">{money(w.reimb)}</TableCell>
+                        <TableCell className="text-right"><Zero value={num(w.reg)} /></TableCell>
+                        <TableCell className="text-right"><Ot value={num(w.ot)} /></TableCell>
+                        <TableCell className="text-right"><Zero value={num(w.hol)} /></TableCell>
+                        <TableCell className="text-right"><Zero value={num(w.sick)} /></TableCell>
+                        <TableCell className="text-right"><Zero value={num(w.vac)} /></TableCell>
+                        <TableCell className="text-right"><Zero value={money(w.bonus)} /></TableCell>
+                        <TableCell className="text-right"><Zero value={money(w.reimb)} /></TableCell>
                       </TableRow>
                     ))}
                   </Fragment>

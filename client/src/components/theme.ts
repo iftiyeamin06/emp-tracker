@@ -82,4 +82,8 @@ export const hoverCss = `
 .tc-date:focus { outline: 2px solid #2563eb; outline-offset: 1px; }
 @keyframes tc-spin { to { transform: rotate(360deg); } }
 .tc-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: tc-spin .7s linear infinite; display: inline-block; }
+/* Zero-value mute: the real "0"/"$0.00" stays in the DOM (tests + screen
+   readers see the value) while sighted users get a soft dash instead. */
+.zero-mute { position: relative; color: transparent; user-select: none; }
+.zero-mute::after { content: "—"; position: absolute; inset: 0; color: rgb(100 116 139 / 0.4); }
 `;

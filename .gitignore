@@ -5,3 +5,5 @@ dist/
 .local/
 scripts/emp_key.pem
 scripts/*.tar.gz
+client/src/**/*.js
+client/src/**/*.jsx
