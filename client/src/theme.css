@@ -26,7 +26,13 @@ body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-ink);
-  font-family: system-ui, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Tabular numerals wherever numbers must align: data tables and KPI values. */
+table,
+.kpi-card-value {
+  font-variant-numeric: tabular-nums;
 }
 
 :root[data-theme="dark"] input,
