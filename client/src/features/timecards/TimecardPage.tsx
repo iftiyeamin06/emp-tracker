@@ -535,8 +535,8 @@ export default function TimecardPage() {
       </div>
       {dirty && <span className="text-sm"><span aria-hidden className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-500" />● Unsaved changes</span>}
       {!locked && (
-        <p className="my-1 text-[13px] text-muted-foreground">
-          Type hours (e.g. 9) or a code: 8 worked · H8 holiday · S8 sick · V8 vacation · HW8 worked holiday. Click Save when done.
+        <p className="my-1 text-[13px] text-slate-600 dark:text-slate-300">
+          Type hours (e.g. 9) or a code: <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">8</kbd> worked · <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">H8</kbd> holiday · <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">S8</kbd> sick · <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">V8</kbd> vacation · <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">HW8</kbd> worked holiday. Click Save when done.
         </p>
       )}
       {savedFlash && <span className="rounded-xl bg-green-600 px-2.5 py-0.5 text-[13px] text-white">Saved</span>}
