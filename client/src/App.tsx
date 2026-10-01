@@ -3,17 +3,19 @@ import { get } from "./api/client";
 import { Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
 import ReportPage from "./features/report/ReportPage";
+import SickHoursPage from "./features/leave/SickHoursPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import EmployeesPage from "./features/employees/EmployeesPage";
 import { Sidebar, TopBar } from "./components/TopBar";
 import "./theme.css";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
-const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/"];
+const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/sick", "#/"];
 const TITLES: Record<string, string> = {
   "#/report": "Reports",
   "#/timecards": "Timecards",
   "#/employees": "Employees",
+  "#/sick": "Sick Hours",
 };
 
 function useHashRoute(): string {
@@ -84,6 +86,7 @@ export default function App() {
         <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
         <main className="p-6">
           {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
+          {route === "#/sick" && <SickHoursPage />}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
           {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : me.role === "OWNER" ? <EmployeesPage readOnly /> : <p>Access denied.</p>)}
         </main>

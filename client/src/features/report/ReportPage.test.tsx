@@ -283,33 +283,17 @@ describe("ReportPage", () => {
     expect(seen.filter((u) => u.includes("/api/timecards/2")).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("owner can expand a row to see sick balance and dates taken", async () => {
+  it("employee names are plain text with no leave drill-down", async () => {
     const seen: string[] = [];
     (fetch as any).mockImplementation((url: string) => {
       seen.push(url);
-      if (url === "/api/employees/1/leave") {
-        return ok({
-          data: {
-            balances: { SICK_SAFE_PAID: 32 },
-            ledger: [
-              { date: "2026-01-01", leave_type: "SICK_SAFE_PAID", entry_type: "accrual", hours: 40, note: "2026 frontload" },
-              { date: "2026-10-06", leave_type: "SICK_SAFE_PAID", entry_type: "usage", hours: -8, note: "2026-10-06" },
-            ],
-          },
-        });
-      }
       return url.includes("/api/pay-periods") ? ok({ data: periods }) : ok({ data: grid("SUBMITTED") });
     });
     render(<ReportPage />);
     await screen.findByText("Amy Example");
-    expect(screen.queryByText("Sick: 32 of 40 hours remaining")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Amy Example" }));
-    expect(await screen.findByText("Sick: 32 of 40 hours remaining")).toBeTruthy();
-    expect(screen.getByText(/Oct 06, 2026/)).toBeTruthy();
-    expect(seen).toContain("/api/employees/1/leave");
-    // second click collapses
-    fireEvent.click(screen.getByRole("button", { name: "Amy Example" }));
-    expect(screen.queryByText("Sick: 32 of 40 hours remaining")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Amy Example" })).toBeNull();
+    expect(screen.queryByText(/Sick:.*hours remaining/)).toBeNull();
+    expect(seen.filter((u) => u.includes("/leave")).length).toBe(0);
   });
 
   const alertsMock = (alerts: unknown) => (url: string) => {

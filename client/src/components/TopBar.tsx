@@ -9,6 +9,7 @@ import { cn } from "../lib/utils";
 const NAV: { hash: string; label: string; roles: SessionUser["role"][] }[] = [
   { hash: "#/timecards", label: "Timecards", roles: ["ADMIN"] },
   { hash: "#/employees", label: "Employees", roles: ["ADMIN", "OWNER"] },
+  { hash: "#/sick", label: "Sick Hours", roles: ["ADMIN", "OWNER"] },
   { hash: "#/report", label: "Report", roles: ["OWNER"] },
 ];
 

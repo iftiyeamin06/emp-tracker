@@ -7,7 +7,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "../../components/ui/table";
-import { availableYears, defaultYear, filterPeriods, fmtDay, fmtRange, groupPeriods } from "../../lib/periodOptions";
+import { availableYears, defaultYear, filterPeriods, fmtRange, groupPeriods } from "../../lib/periodOptions";
 
 interface Period {
   id: number;
@@ -95,45 +95,6 @@ interface TableRow {
   weeks?: MonthlyWeek[];
 }
 
-interface LedgerRow {
-  date: string;
-  leave_type: string;
-  entry_type: string;
-  hours: number | string;
-  note: string | null;
-}
-
-interface LeaveData {
-  balances: Record<string, number>;
-  ledger: LedgerRow[];
-}
-
-function LeaveDetail({ leave }: { leave: LeaveData }) {
-
-  const bal = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
-  // Usage rows carry the sick date in `note` (reason = work_date); fall back
-  // to the ledger date for rows without a date-like note.
-  // entry_type arrives in the ENUM's declared case (USAGE) while mocks and
-  // older rows may use lowercase — compare case-insensitively.
-  const taken = (leave.ledger ?? []).filter((l) => String(l.entry_type).toLowerCase() === "usage");
-  return (
-    <div className="px-1 py-1 text-sm">
-      <div>Sick: {bal} of 40 hours remaining</div>
-      {taken.length === 0 ? (
-        <div className="text-muted-foreground">No sick days taken.</div>
-      ) : (
-        <ul className="ml-4 mt-1 list-disc">
-          {taken.map((l, i) => (
-            <li key={i}>
-              {fmtDay(/^\d{4}-\d{2}-\d{2}$/.test(String(l.note ?? "")) ? l.note : l.date)} — {Number(l.hours)}h
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 interface AlertItem {
   code: string;
   severity: "red" | "amber" | "yellow";
@@ -201,19 +162,7 @@ function AlertsCard({ periodId }: { periodId: number }) {
   );
 }
 
-function ReportTable({
-  rows,
-  openLeave,
-  leaveById,
-  leaveLoading,
-  onToggleLeave,
-}: {
-  rows: TableRow[];
-  openLeave: Record<number, boolean>;
-  leaveById: Record<number, LeaveData>;
-  leaveLoading: Record<number, boolean>;
-  onToggleLeave: (id: number) => void;
-}) {
+function ReportTable({ rows }: { rows: TableRow[] }) {
   const total = (f: (r: TableRow) => string): string => {
     const n = rows.reduce((t, r) => t + Number(f(r) ?? 0), 0);
     return String(Math.round(n * 100) / 100);
@@ -235,20 +184,11 @@ function ReportTable({
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
-            <Fragment key={r.id}>
-              <TableRow className="tc-row odd:bg-muted/50">
-                <TableCell>
-                  <Button
-                    variant="link"
-                    onClick={() => onToggleLeave(r.employee_id ?? r.id)}
-                    aria-expanded={!!openLeave[r.employee_id ?? r.id]}
-                    title="Show sick leave balance and dates taken"
-                    className="h-auto p-0 font-semibold"
-                  >
-                    {r.name}
-                  </Button>
-                  {r.cash && <CashBadge />}
-                </TableCell>
+            <TableRow key={r.id} className="tc-row odd:bg-muted/50">
+              <TableCell>
+                <span className="font-semibold">{r.name}</span>
+                {r.cash && <CashBadge />}
+              </TableCell>
                 <TableCell className="text-right"><Zero value={r.reg} /></TableCell>
                 <TableCell className="text-right"><Ot value={r.ot} /></TableCell>
                 <TableCell className="text-right"><Zero value={r.hol} /></TableCell>
@@ -257,16 +197,7 @@ function ReportTable({
                 <TableCell className="text-right"><Zero value={money(r.bonus)} /></TableCell>
                 <TableCell className="text-right"><Zero value={money(r.reimb)} /></TableCell>
               </TableRow>
-              {openLeave[r.employee_id ?? r.id] && (
-                <TableRow className="leave-detail-row bg-muted/50 hover:bg-muted/50">
-                  <TableCell colSpan={8}>
-                    {leaveLoading[r.employee_id ?? r.id] && <span className="text-sm">Loading…</span>}
-                    {leaveById[r.employee_id ?? r.id] && <LeaveDetail leave={leaveById[r.employee_id ?? r.id]} />}
-                  </TableCell>
-                </TableRow>
-              )}
-            </Fragment>
-          ))}
+            ))}
         </TableBody>
         <TableFooter className="report-totals-row">
           <TableRow className="font-semibold">
@@ -398,9 +329,6 @@ export default function ReportPage() {
   const [reopenError, setReopenError] = useState("");
   const [reopening, setReopening] = useState(false);
   const [openEmp, setOpenEmp] = useState<Record<number, boolean>>({});
-  const [openLeave, setOpenLeave] = useState<Record<number, boolean>>({});
-  const [leaveById, setLeaveById] = useState<Record<number, LeaveData>>({});
-  const [leaveLoading, setLeaveLoading] = useState<Record<number, boolean>>({});
   const [year, setYear] = useState<string | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
 
@@ -561,22 +489,6 @@ export default function ReportPage() {
     reimb: num(r.entry?.reimbursement_amount),
   }));
 
-  // Owner drill-down: sick balance + dates taken per employee. Lazy per-row
-  // fetch (no N+1 on load); GET /api/employees/:id/leave is auth-only so both
-  // roles can call it.
-  const toggleLeave = (id: number) => {
-    const next = !openLeave[id];
-    setOpenLeave((p) => ({ ...p, [id]: next }));
-    if (!next || leaveById[id] || leaveLoading[id]) return;
-    setLeaveLoading((p) => ({ ...p, [id]: true }));
-    get<{ data: LeaveData }>(`/api/employees/${id}/leave`)
-      .then((j) => setLeaveById((p) => ({ ...p, [id]: j.data })))
-      .catch(() => undefined)
-      .finally(() => setLeaveLoading((p) => ({ ...p, [id]: false })));
-  };
-
-  const leaveProps = { openLeave, leaveById, leaveLoading, onToggleLeave: toggleLeave };
-
   const displayRows: TableRow[] = mode === "weekly" ? weeklyRows : mrows;
   const showKpis = !loading && !error && displayRows.length > 0;
 
@@ -735,7 +647,7 @@ export default function ReportPage() {
       {mode === "monthly" && !loading && !error && mrows.length === 0 && (
         <EmptyState title="No data for this month" hint="Pick a month with approved or open weeks." />
       )}
-      {mode === "monthly" && !loading && !error && mrows.length > 0 && <ReportTable rows={mrows} {...leaveProps} />}
+      {mode === "monthly" && !loading && !error && mrows.length > 0 && <ReportTable rows={mrows} />}
       {mode === "monthly" && !loading && !error && mrows.some((r) => (r.weeks ?? []).length > 0) && (
         <>
           <h3 className="text-lg font-semibold tracking-tight">By week</h3>
@@ -795,10 +707,7 @@ export default function ReportPage() {
         <EmptyState title="No employees in this period" hint="Add employees to the roster first." />
       )}
       {mode === "weekly" && !loading && !error && rows.length > 0 && (
-        <ReportTable
-          rows={weeklyRows}
-          {...leaveProps}
-        />
+        <ReportTable rows={weeklyRows} />
       )}
     </section>
   );
