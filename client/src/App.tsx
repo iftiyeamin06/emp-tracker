@@ -7,7 +7,7 @@ import SickHoursPage from "./features/leave/SickHoursPage";
 import AuditTrailPage from "./features/audit/AuditTrailPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import EmployeesPage from "./features/employees/EmployeesPage";
-import { Sidebar, TopBar } from "./components/TopBar";
+import { Sidebar, TopBar, MobileDrawer } from "./components/TopBar";
 import "./theme.css";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
@@ -35,7 +35,12 @@ function useHashRoute(): string {
 export default function App() {
   const [me, setMe] = useState<SessionUser | null | undefined>(undefined); // undefined = loading
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("emp-tracker-theme") === "dark");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const route = useHashRoute();
+
+  useEffect(() => {
+    setDrawerOpen(false); // navigating closes the mobile drawer
+  }, [route]);
 
   useEffect(() => {
     get<{ user: SessionUser }>("/api/auth/me")
@@ -86,9 +91,10 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-muted/40">
       <Sidebar role={me.role} route={route} />
+      <MobileDrawer role={me.role} route={route} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title={TITLES[route] ?? "HourBook"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
-        <main className="p-6">
+        <TopBar title={TITLES[route] ?? "HourBook"} me={me} onLogout={logout} onMenu={() => setDrawerOpen(true)} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
+        <main className="p-4 md:p-6">
           {(route === "#/report" || route === "#/report/weekly" || route === "#/report/monthly") &&
             (me.role === "OWNER" ? (
               <ReportPage

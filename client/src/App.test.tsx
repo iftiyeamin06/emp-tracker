@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import App from "./App";
 
 const ok = (data: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(data) } as Response);
@@ -61,6 +61,24 @@ describe("App routing", () => {
     window.location.hash = "#/report";
     render(<App />);
     expect(await screen.findByText("Amy Example")).toBeTruthy();
+  });
+
+  it("mobile hamburger opens the drawer nav with sub-links", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    );
+    mockApi({ email: "o@x.com", role: "OWNER" });
+    window.location.hash = "#/report";
+    render(<App />);
+    await screen.findByText("Amy Example");
+    expect(screen.queryByRole("navigation", { name: "Mobile" })).toBeNull(); // drawer closed
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const mobile = await screen.findByRole("navigation", { name: "Mobile" });
+    expect(within(mobile).getByText("Weekly Report", { selector: "a" })).toBeTruthy();
+    expect(within(mobile).getByText("Monthly Report", { selector: "a" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+    expect(screen.queryByRole("navigation", { name: "Mobile" })).toBeNull();
   });
 
   it("report sub-links open weekly and monthly modes (owner only)", async () => {

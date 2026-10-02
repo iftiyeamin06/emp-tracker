@@ -542,14 +542,14 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
                 />{" "}
                 Include Archived/Approved Periods
               </label>
-              <label className="flex items-center gap-1 text-sm">
+              <label className="flex min-w-0 max-w-full items-center gap-1 text-sm">
                 Period{" "}
                 <Button aria-label="Previous week" variant="ghost" size="icon" onClick={() => step(1)} disabled={visiblePeriods.length === 0 || visiblePeriods.findIndex((p) => p.id === periodId) >= visiblePeriods.length - 1}>‹</Button>
                 <select
                   value={periodId ?? ""}
                   onChange={(e) => setPeriodId(Number(e.target.value))}
                   disabled={visiblePeriods.length === 0}
-                  className={selectClass}
+                  className={`${selectClass} min-w-0 max-w-full`}
                 >
                   {groups.current.length > 0 && (
                     <optgroup label="Active / Current Week">
