@@ -171,9 +171,14 @@ describe("ReportPage", () => {
     render(<ReportPage />);
     fireEvent.click(await screen.findByText("Monthly"));
     expect(await screen.findByText("Total Worked Hours")).toBeTruthy();
-    expect(screen.getByText("80")).toBeTruthy(); // 75 + 5
+    expect(screen.getByText("80")).toBeTruthy(); // 75 + 5 (reg + OT only)
     expect(screen.getByText("Overtime Hours")).toBeTruthy();
-    expect(screen.getByText("16")).toBeTruthy(); // 8 sick + 8 hol
+    expect(screen.getByText(/holiday hours/i)).toBeTruthy();
+    expect(screen.getByText(/vacation hours/i)).toBeTruthy();
+    expect(screen.getByText(/sick hours/i)).toBeTruthy();
+    expect(screen.getAllByText("8 hrs")).toHaveLength(2); // holiday 8 + sick 8
+    expect(screen.getByText("0 hrs")).toBeTruthy(); // vacation 0
+    expect(screen.queryByText(/leave & pto/i)).toBeNull();
     expect(screen.getByText("$120.00")).toBeTruthy(); // 100 + 20
   });
 

@@ -84,7 +84,7 @@ export default function SickHoursPage() {
                 <h3 className="text-sm font-semibold">
                   {emp.full_name} <span className="font-normal text-muted-foreground">· {emp.employee_number}</span>
                 </h3>
-                <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                   {leave ? `Sick Leave Balance: ${remaining} hrs remaining` : "Leave unavailable"}
                 </span>
               </div>
@@ -103,7 +103,7 @@ export default function SickHoursPage() {
                     {taken.map((l, i) => (
                       <TableRow key={i}>
                         <TableCell>{fmtDay(/^\d{4}-\d{2}-\d{2}$/.test(String(l.note ?? "")) ? l.note : l.date)}</TableCell>
-                        <TableCell className="text-right font-medium text-red-600 dark:text-red-400">
+                        <TableCell className="text-right font-mono font-medium tabular-nums text-red-600 dark:text-red-400">
                           {Number(l.hours)} hrs
                         </TableCell>
                         <TableCell className="text-muted-foreground">{l.note ?? "—"}</TableCell>

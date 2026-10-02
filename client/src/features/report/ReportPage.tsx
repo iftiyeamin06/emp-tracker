@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, Calendar, Clock, DollarSign } from "lucide-react";
+import { AlertTriangle, Clock, DollarSign, Palmtree, PartyPopper, Stethoscope } from "lucide-react";
 import { get, post } from "../../api/client";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
 import { hoverCss } from "../../components/theme";
@@ -222,10 +222,11 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
   const reg = sum((r) => r.reg);
   const ot = sum((r) => r.ot);
   const hol = sum((r) => r.hol);
-  const leave = sum((r) => r.sick) + sum((r) => r.vac) + hol;
+  const sick = sum((r) => r.sick);
+  const vac = sum((r) => r.vac);
   const extra = sum((r) => r.bonus) + sum((r) => r.reimb);
   const worked = Math.round((reg + ot) * 100) / 100;
-  const total = Math.round((reg + ot + hol) * 100) / 100;
+  const total = Math.round((reg + ot + hol + vac + sick) * 100) / 100;
   const seg = (v: number): string => (total > 0 ? `${Math.max(0, Math.min(100, (v / total) * 100))}%` : "0%");
   const cards = [
     {
@@ -245,9 +246,25 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
       badge: null as React.ReactNode,
     },
     {
-      label: "Leave & PTO",
-      value: String(leave),
-      icon: Calendar,
+      label: "Holiday Hours",
+      value: `${hol} hrs`,
+      icon: PartyPopper,
+      iconClass: "text-slate-400 dark:text-slate-500",
+      valueClass: "text-slate-900 dark:text-slate-50",
+      badge: null as React.ReactNode,
+    },
+    {
+      label: "Vacation Hours",
+      value: `${vac} hrs`,
+      icon: Palmtree,
+      iconClass: "text-slate-400 dark:text-slate-500",
+      valueClass: "text-slate-900 dark:text-slate-50",
+      badge: null as React.ReactNode,
+    },
+    {
+      label: "Sick Hours",
+      value: `${sick} hrs`,
+      icon: Stethoscope,
       iconClass: "text-slate-400 dark:text-slate-500",
       valueClass: "text-slate-900 dark:text-slate-50",
       badge: null as React.ReactNode,
@@ -263,7 +280,7 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
   ];
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((kpi) => (
           <Card key={kpi.label} className="kpi-card border border-slate-200 bg-white p-0 shadow-xs dark:border-slate-800 dark:bg-slate-950">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
@@ -271,7 +288,7 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
               <kpi.icon aria-hidden className={`h-4 w-4 shrink-0 ${kpi.iconClass}`} />
             </CardHeader>
             <CardContent className="p-4 pt-0">
-              <div className={`kpi-card-value text-2xl font-bold ${kpi.valueClass}`}>{kpi.value}</div>
+              <div className={`kpi-card-value font-mono text-2xl font-bold tabular-nums ${kpi.valueClass}`}>{kpi.value}</div>
               {kpi.badge}
             </CardContent>
           </Card>
@@ -285,11 +302,13 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
         <div
           className="flex h-3 w-full overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={`Regular ${reg} hours, overtime ${ot} hours, holiday ${hol} hours`}
+          aria-label={`Regular ${reg} hours, overtime ${ot} hours, holiday ${hol} hours, vacation ${vac} hours, sick ${sick} hours`}
         >
           <div className="bg-slate-800 dark:bg-slate-200" style={{ width: seg(reg) }} />
           <div className="bg-amber-500" style={{ width: seg(ot) }} />
           <div className="bg-slate-300 dark:bg-slate-700" style={{ width: seg(hol) }} />
+          <div className="bg-teal-500" style={{ width: seg(vac) }} />
+          <div className="bg-sky-500" style={{ width: seg(sick) }} />
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
@@ -300,6 +319,12 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-slate-300" />Holiday ({hol}h)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-teal-500" />Vacation ({vac}h)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-sky-500" />Sick ({sick}h)
           </span>
         </div>
       </Card>

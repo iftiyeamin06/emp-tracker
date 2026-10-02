@@ -98,7 +98,7 @@ export default function HolidaysPage() {
               <h3 className="text-sm font-semibold">
                 {emp.full_name} <span className="font-normal text-muted-foreground">· {emp.employee_number}</span>
               </h3>
-              <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+              <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                 {entries.length} {entries.length === 1 ? "day" : "days"}
               </span>
             </div>
@@ -115,7 +115,7 @@ export default function HolidaysPage() {
                   <TableRow key={i}>
                     <TableCell>{l.date}</TableCell>
                     <TableCell className="text-muted-foreground">{l.kind}</TableCell>
-                    <TableCell className="text-right font-medium">{l.hours} hrs</TableCell>
+                    <TableCell className="text-right font-mono font-medium tabular-nums">{l.hours} hrs</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

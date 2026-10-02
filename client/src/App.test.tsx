@@ -152,6 +152,5 @@ describe("App routing", () => {
     expect(screen.queryByText("Add Employee")).toBeNull();
     expect(screen.queryByText("Terminate")).toBeNull();
     expect(screen.queryByText("Delete")).toBeNull();
-    expect(screen.getByText("View")).toBeTruthy();
   });
 });

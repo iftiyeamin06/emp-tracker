@@ -54,7 +54,7 @@ describe("EmployeesPage", () => {
     });
     expect(await screen.findByText("Bob New")).toBeTruthy(); // refetched list
     const amyRow = screen.getByText("Amy Example").closest("tr");
-    expect(amyRow?.textContent).toContain("Cash"); // roster Payment column
+    expect(amyRow?.textContent).toContain("CASH"); // roster CASH badge
   });
 
   it("error path: shows the error and keeps form state", async () => {
@@ -108,7 +108,6 @@ describe("EmployeesPage", () => {
     (window as any).confirm = vi.fn().mockReturnValue(false);
     render(<EmployeesPage />);
     await screen.findByText("Gone Person");
-    expect(screen.getByText("Terminated Oct 01, 2026")).toBeTruthy();
     fireEvent.click(screen.getByText("Rehire"));
     expect(calls.filter((c) => c.startsWith("PUT")).length).toBe(0);
     (window as any).confirm = vi.fn().mockReturnValue(true);
@@ -170,45 +169,50 @@ describe("EmployeesPage", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("payment badge shows the correct label per payment_method", async () => {
-    (fetch as any).mockImplementation(() => ok({ data: [
-      { id: 1, employee_number: "E1", full_name: "Cash Person", hire_date: "2026-09-01", termination_date: null, payment_method: "CASH", compensation: null },
-      { id: 2, full_name: "Amy Example", employee_number: "E2", hire_date: "2026-09-01", termination_date: null, payment_method: "DIRECT_DEPOSIT", compensation: null },
-      { id: 3, employee_number: "E3", full_name: "Check Person", hire_date: "2026-09-01", termination_date: null, payment_method: "CHECK", compensation: null },
-    ] }));
-    render(<EmployeesPage />);
-    await screen.findByText("Cash Person");
-    const cashRow = screen.getByText("Cash Person").closest("tr");
-    expect(cashRow?.textContent).toContain("CASH");
-    const ddRow = screen.getByText("Amy Example").closest("tr");
-    expect(ddRow?.textContent).toContain("Direct Deposit");
-    expect(ddRow?.textContent).not.toContain("CASH");
-    const checkRow = screen.getByText("Check Person").closest("tr");
-    expect(checkRow?.textContent).toContain("Check");
-  });
-
-  it("profile drawer renders the sick balance card from mock data", async () => {
+  it("segmented switcher aggregates hour breakdowns across views", async () => {
+    const periods = [
+      { id: 10, start_date: "2026-10-12", end_date: "2026-10-18" },
+      { id: 9, start_date: "2026-10-05", end_date: "2026-10-11" },
+      { id: 8, start_date: "2026-09-28", end_date: "2026-10-04" },
+    ];
+    const grid = (c: { reg: number; ot: number; hol: number; sick: number; vac: number; days?: { day_type: string; hours: string }[] }) => ({
+      period: { id: 9, status: "OPEN" },
+      rows: [{
+        employee: { id: 1 },
+        days: c.days ?? [],
+        computed: { reg_hours: String(c.reg), ot_hours: String(c.ot), holiday_hours: String(c.hol), sick_safe_paid_hours: String(c.sick), vacation_hours: String(c.vac) },
+      }],
+    });
     (fetch as any).mockImplementation((url: string) => {
-      if (url === "/api/employees/1/leave") {
-        return ok({
-          data: {
-            balances: { SICK_SAFE_PAID: 32 },
-            ledger: [
-              { date: "2026-01-01", leave_type: "SICK_SAFE_PAID", entry_type: "accrual", hours: 40, note: "2026 frontload" },
-              { date: "2026-10-20", leave_type: "SICK_SAFE_PAID", entry_type: "usage", hours: -8, note: "2031-10-13" },
-            ],
-          },
-        });
-      }
+      if (url.includes("/api/pay-periods")) return ok({ data: periods });
+      if (url.includes("/api/timecards/10")) return ok({ data: grid({ reg: 20, ot: 0, hol: 0, sick: 0, vac: 0, days: [{ day_type: "HW8", hours: "8.00" }] }) });
+      if (url.includes("/api/timecards/9")) return ok({ data: grid({ reg: 40, ot: 5, hol: 8, sick: 4, vac: 2 }) });
+      if (url.includes("/api/timecards/8")) return ok({ data: grid({ reg: 32, ot: 0, hol: 0, sick: 0, vac: 0 }) });
       return ok(list());
     });
     render(<EmployeesPage />);
     await screen.findByText("Amy Example");
-    fireEvent.click(screen.getAllByText("View")[0]);
-    expect(await screen.findByText("Sick: 32 of 40 hours remaining")).toBeTruthy();
-    expect(await screen.findByText("Leave History")).toBeTruthy();
-    expect(screen.getByText("2026 frontload")).toBeTruthy();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByText("Sick: 32 of 40 hours remaining")).toBeNull();
+    for (const h of ["Sick Hrs", "Vacation Hrs", "Holiday Hrs", "HW Hrs"]) {
+      expect(screen.getByText(h)).toBeTruthy();
+    }
+    // weekly defaults to the latest period (HW8 day only)
+    expect(await screen.findByText("20 hrs")).toBeTruthy();
+    expect(screen.getByText("8 hrs")).toBeTruthy(); // HW
+    expect(screen.getByText("Oct 12 – Oct 18, 2026")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Previous period" }));
+    expect(await screen.findByText("45 hrs")).toBeTruthy(); // stepped to Oct 05–11
+    expect(screen.getByText("5 hrs")).toBeTruthy(); // amber OT badge
+    expect(screen.getByText("4 hrs")).toBeTruthy(); // sick
+    expect(screen.getByText("2 hrs")).toBeTruthy(); // vacation
+    expect(screen.getByText("Oct 05 – Oct 11, 2026")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    // October: 20 + 45 worked, 8 HW, 8 hol
+    expect(await screen.findByText("65 hrs")).toBeTruthy();
+    expect(screen.getAllByText("8 hrs")).toHaveLength(2); // holiday 8 + HW 8
+    expect(screen.getByText("October 2026")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Yearly (YTD)" }));
+    // 2026: + 32 worked
+    expect(await screen.findByText("97 hrs")).toBeTruthy();
+    expect(screen.getByText("2026 YTD")).toBeTruthy();
   });
 });

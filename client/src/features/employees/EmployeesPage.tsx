@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { del, get, patch, post, put } from "../../api/client";
-import { fmtDay } from "../../lib/periodOptions";
+import { fmtRange } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
-import { Progress } from "../../components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
 interface Employee {
@@ -19,20 +19,55 @@ interface Employee {
   compensation: { pay_type: string; rate: unknown; overtime_status: string; classification: string | null } | null;
 }
 
-interface LedgerRow {
-  date: string;
-  leave_type: string;
-  entry_type: string;
-  hours: number | string;
-  note: string | null;
+interface Period {
+  id: number;
+  start_date: string;
+  end_date: string;
 }
 
-interface LeaveData {
-  balances: Record<string, number>;
-  ledger: LedgerRow[];
+interface GridRow {
+  employee: { id: number };
+  days: { day_type: string; hours: unknown }[];
+  computed: {
+    reg_hours: unknown;
+    ot_hours: unknown;
+    holiday_hours: unknown;
+    sick_safe_paid_hours: unknown;
+    vacation_hours: unknown;
+  } | null;
 }
 
-const PAY_LABELS: Record<string, string> = { DIRECT_DEPOSIT: "Direct Deposit", CHECK: "Check", CASH: "Cash" };
+interface PeriodSummary {
+  worked: number;
+  ot: number;
+  sick: number;
+  vac: number;
+  hol: number;
+  hw: number;
+}
+
+type View = "weekly" | "monthly" | "yearly";
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+const monthLabel = (ym: string): string => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+};
+
+const shiftMonth = (ym: string, dir: 1 | -1): string => {
+  let [y, m] = ym.split("-").map(Number);
+  m += dir;
+  if (m < 1) {
+    m = 12;
+    y -= 1;
+  }
+  if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  return `${y}-${String(m).padStart(2, "0")}`;
+};
 
 const money = (rate: unknown, payType: string): string => {
   const formatted = Number(rate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -46,29 +81,6 @@ const selectClass =
 
 const emptyForm = { employee_number: "", full_name: "", hire_date: "", pay: "H", rate: "", overtime_status: "NON_EXEMPT", classification: "", payment_method: "DIRECT_DEPOSIT" };
 
-// Sick balance with a visual progress bar. The legacy sentence stays verbatim
-// (tests + screen readers); the bar and the Balance line are the new visual.
-function SickBalance({ leave }: { leave: LeaveData }) {
-  const remaining = Number(leave.balances["SICK_SAFE_PAID"] ?? 0);
-  const accrued = (leave.ledger ?? [])
-    .filter((l) => l.leave_type === "SICK_SAFE_PAID" && String(l.entry_type).toLowerCase() === "accrual")
-    .reduce((t, l) => t + Math.max(0, Number(l.hours) || 0), 0);
-  const total = accrued > 0 ? accrued : Math.max(remaining, 0);
-  const pct = total > 0 ? (remaining / total) * 100 : 0;
-  const bar = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-destructive";
-  return (
-    <div className="space-y-2 text-sm">
-      <span>
-        Sick: {remaining} of 40 hours remaining
-      </span>
-      <Progress value={pct} indicatorClassName={bar} />
-      <span className="text-muted-foreground">
-        Sick Leave Balance: {remaining} of {total} hrs remaining
-      </span>
-    </div>
-  );
-}
-
 export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean }) {
   const [rows, setRows] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,10 +92,11 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
   const [saving, setSaving] = useState(false);
   const [addedFlash, setAddedFlash] = useState(false);
   const [rowError, setRowError] = useState("");
-  const [profile, setProfile] = useState<Employee | null>(null);
-  const [leave, setLeave] = useState<LeaveData | null>(null);
-  const [leaveLoading, setLeaveLoading] = useState(false);
-  const [leaveError, setLeaveError] = useState("");
+  const [periods, setPeriods] = useState<Period[]>([]);
+  const [view, setView] = useState<View>("weekly");
+  const [weekIdx, setWeekIdx] = useState(0);
+  const [monthYm, setMonthYm] = useState<string | null>(null);
+  const [summary, setSummary] = useState<Record<number, PeriodSummary>>({});
 
   const closeModal = () => {
     setOpen(false);
@@ -91,35 +104,16 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
     setFormError("");
   };
 
-  const closeProfile = () => setProfile(null);
-
-  const openProfile = (emp: Employee) => {
-    setProfile(emp);
-    setLeave(null);
-    setLeaveError("");
-    setLeaveLoading(true);
-    get<{ data: LeaveData }>(`/api/employees/${emp.id}/leave`)
-      .then((j) => {
-        setLeave(j.data);
-        setLeaveLoading(false);
-      })
-      .catch(() => {
-        setLeaveError("Could not load leave history.");
-        setLeaveLoading(false);
-      });
-  };
-
   useEffect(() => {
-    if (!open && !profile) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         closeModal();
-        closeProfile();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, profile]);
+  }, [open]);
 
   const load = () => {
     setLoading(true);
@@ -135,6 +129,102 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
       });
   };
   useEffect(load, []);
+
+  // Period options for the summary columns (newest-first, like the API returns).
+  useEffect(() => {
+    get<{ data: Period[] }>("/api/pay-periods")
+      .then((j) =>
+        setPeriods(
+          (j.data ?? []).filter((p) => p && typeof p.id === "number" && typeof p.start_date === "string" && typeof p.end_date === "string")
+        )
+      )
+      .catch(() => undefined); // summary columns fall back to dashes
+  }, []);
+
+  const yearNow = new Date().getFullYear();
+  const latestYm = periods[0]?.start_date.slice(0, 7) ?? null;
+  const effMonth = monthYm ?? latestYm;
+  const week = periods[Math.min(weekIdx, Math.max(periods.length - 1, 0))];
+
+  const targets: Period[] =
+    view === "yearly"
+      ? periods.filter((p) => p.start_date.slice(0, 4) === String(yearNow))
+      : view === "monthly"
+        ? effMonth
+          ? periods.filter((p) => p.start_date.slice(0, 7) === effMonth)
+          : []
+        : week
+          ? [week]
+          : [];
+
+  const rangeLabel =
+    view === "yearly"
+      ? `${yearNow} YTD`
+      : view === "monthly"
+        ? effMonth
+          ? monthLabel(effMonth)
+          : "No pay periods"
+        : week
+          ? fmtRange(week.start_date, week.end_date)
+          : "No pay periods";
+
+  // Per-employee totals over the selected window. Gross = wages + bonus
+  // (hourly: reg x rate + OT x 1.5 x rate; salary: weekly rate).
+  useEffect(() => {
+    let live = true;
+    if (targets.length === 0 || rows.length === 0) {
+      setSummary({});
+      return;
+    }
+    const num = (v: unknown): number => {
+      const n = Number(v ?? 0);
+      return Number.isNaN(n) ? 0 : n;
+    };
+    Promise.all(
+      targets.map((p) =>
+        get<{ data: { rows: GridRow[] } }>(`/api/timecards/${p.id}`)
+          .then((j) => j.data?.rows ?? [])
+          .catch(() => [] as GridRow[])
+      )
+    ).then((grids) => {
+      if (!live) return;
+      const agg: Record<number, PeriodSummary> = {};
+      for (const grid of grids) {
+        for (const r of grid) {
+          const id = r.employee?.id;
+          if (id == null) continue;
+          const reg = num(r.computed?.reg_hours);
+          const ot = num(r.computed?.ot_hours);
+          const sick = num(r.computed?.sick_safe_paid_hours);
+          const vac = num(r.computed?.vacation_hours);
+          const hol = num(r.computed?.holiday_hours);
+          const hw = (r.days ?? []).reduce((t, d) => t + (d.day_type === "HW8" ? num(d.hours) : 0), 0);
+          const cur = agg[id] ?? { worked: 0, ot: 0, sick: 0, vac: 0, hol: 0, hw: 0 };
+          cur.worked += reg + ot;
+          cur.ot += ot;
+          cur.sick += sick;
+          cur.vac += vac;
+          cur.hol += hol;
+          cur.hw += hw;
+          agg[id] = cur;
+        }
+      }
+      for (const k of Object.keys(agg)) {
+        const a = agg[Number(k)];
+        a.worked = r2(a.worked);
+        a.ot = r2(a.ot);
+        a.sick = r2(a.sick);
+        a.vac = r2(a.vac);
+        a.hol = r2(a.hol);
+        a.hw = r2(a.hw);
+      }
+      setSummary(agg);
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, periods, rows, weekIdx, monthYm]);
 
   const today = (): string => {
     const d = new Date();
@@ -297,52 +387,135 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
         <EmptyState title="No employees yet" hint="Add your first employee to get started." />
       )}
       {!loading && !error && rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div role="group" aria-label="Summary view" className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+            {(["weekly", "monthly", "yearly"] as View[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={
+                  view === v
+                    ? "rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-xs dark:bg-slate-950 dark:text-slate-100"
+                    : "rounded-md px-3 py-1.5 text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                }
+              >
+                {v === "weekly" ? "Weekly" : v === "monthly" ? "Monthly" : "Yearly (YTD)"}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            {view === "weekly" && (
+              <>
+                <Button
+                  type="button"
+                  aria-label="Previous period"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setWeekIdx((i) => Math.min(i + 1, Math.max(periods.length - 1, 0)))}
+                  disabled={periods.length === 0 || weekIdx >= periods.length - 1}
+                >
+                  <ChevronLeft />
+                </Button>
+                <Button
+                  type="button"
+                  aria-label="Next period"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setWeekIdx((i) => Math.max(i - 1, 0))}
+                  disabled={weekIdx <= 0}
+                >
+                  <ChevronRight />
+                </Button>
+              </>
+            )}
+            {view === "monthly" && (
+              <>
+                <Button type="button" aria-label="Previous month" variant="ghost" size="icon" onClick={() => setMonthYm(shiftMonth(effMonth ?? latestYm ?? `${yearNow}-01`, -1))}>
+                  <ChevronLeft />
+                </Button>
+                <Button type="button" aria-label="Next month" variant="ghost" size="icon" onClick={() => setMonthYm(shiftMonth(effMonth ?? latestYm ?? `${yearNow}-01`, 1))}>
+                  <ChevronRight />
+                </Button>
+              </>
+            )}
+            <span className="font-mono text-sm text-slate-700 dark:text-slate-300">{rangeLabel}</span>
+          </div>
+        </div>
+      )}
+      {!loading && !error && rows.length > 0 && (
         <Card>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Emp #</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Hire date</TableHead>
-                <TableHead>Pay</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead>Overtime</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Pay Rate</TableHead>
+                <TableHead className="text-right">Worked Hrs</TableHead>
+                <TableHead className="text-right">OT Hrs</TableHead>
+                <TableHead className="text-right">Sick Hrs</TableHead>
+                <TableHead className="text-right">Vacation Hrs</TableHead>
+                <TableHead className="text-right">Holiday Hrs</TableHead>
+                <TableHead className="text-right">HW Hrs</TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((r) => {
-                const term = r.termination_date ? fmtDay(r.termination_date) : null;
+                const s = summary[r.id];
+                const hrs = (v: number | undefined): React.ReactNode =>
+                  s == null || v == null ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    `${v} hrs`
+                  );
                 return (
                   <TableRow key={r.id} className="odd:bg-muted/50">
-                    <TableCell>{r.employee_number}</TableCell>
+                    <TableCell className="font-mono tabular-nums">{r.employee_number}</TableCell>
                     <TableCell>
                       {r.full_name}
                       {r.payment_method === "CASH" && <CashBadge />}
                     </TableCell>
-                    <TableCell>{fmtDay(r.hire_date)}</TableCell>
-                    <TableCell>{r.compensation ? money(r.compensation.rate, r.compensation.pay_type) : "—"}</TableCell>
-                    <TableCell>{PAY_LABELS[r.payment_method] ?? r.payment_method}</TableCell>
-                    <TableCell>{r.compensation ? <Badge variant="outline" className="text-muted-foreground">{r.compensation.overtime_status}</Badge> : "—"}</TableCell>
                     <TableCell>
-                      {term
-                        ? <Badge variant="secondary" className="border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">Terminated {term}</Badge>
-                        : <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Active</Badge>}
+                      <span className="font-mono tabular-nums">{r.compensation ? money(r.compensation.rate, r.compensation.pay_type) : "—"}</span>
+                      {r.compensation && (
+                        <Badge variant="outline" className="ml-1.5 text-muted-foreground">{r.compensation.overtime_status}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-slate-900 dark:text-slate-100">
+                      {s ? `${s.worked} hrs` : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {s == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : s.ot > 0 ? (
+                        <span className="font-mono tabular-nums text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-xs">{s.ot} hrs</span>
+                      ) : (
+                        <span className="font-mono tabular-nums text-slate-400">0 hrs</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      {hrs(s?.sick)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      {hrs(s?.vac)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      {hrs(s?.hol)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      {hrs(s?.hw)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
-                      <Button variant="ghost" size="sm" onClick={() => openProfile(r)}>
-                        View
-                      </Button>
                       {!readOnly && (
                         <>
-                          {" "}
                           <Button variant="ghost" size="sm" onClick={() => {
                             setEditingId(r.id);
                             setForm({ employee_number: r.employee_number, full_name: r.full_name, hire_date: String(r.hire_date).slice(0, 10), pay: r.compensation?.pay_type === "SALARY" ? "S" : "H", rate: r.compensation ? String(r.compensation.rate) : "0", overtime_status: r.compensation?.overtime_status ?? "NON_EXEMPT", classification: r.compensation?.classification ?? "", payment_method: r.payment_method });
                             setFormError(""); setOpen(true);
                           }}>Edit</Button>
-                          {term ? (
+                          {r.termination_date ? (
                             <Button variant="ghost" size="sm" onClick={() => changeTermination(r.id, null, `Rehire ${r.full_name}?`)}>
                               Rehire
                             </Button>
@@ -361,73 +534,6 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
             </TableBody>
           </Table>
         </Card>
-      )}
-      {profile && (
-        <div
-          role="presentation"
-          onClick={closeProfile}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <Card
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${profile.full_name} profile`}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] w-full max-w-xl overflow-y-auto"
-          >
-            <CardHeader>
-              <CardTitle>{profile.full_name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {profile.employee_number} · Hired {fmtDay(profile.hire_date)}
-                {profile.compensation ? ` · ${money(profile.compensation.rate, profile.compensation.pay_type)}` : ""}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Card className="bg-muted/40 p-4 shadow-none">
-                <h4 className="mb-2 text-sm font-medium">Leave Balances</h4>
-                {leaveLoading && <span className="text-sm">Loading…</span>}
-                {leaveError && <Notice title="Couldn't load leave" message={leaveError} />}
-                {leave && <SickBalance leave={leave} />}
-              </Card>
-              <h4 className="text-sm font-medium">Leave History</h4>
-              {leaveLoading && <span className="text-sm">Loading…</span>}
-              {leave && leave.ledger.length === 0 && (
-                <span className="text-sm text-muted-foreground">No leave entries yet.</span>
-              )}
-              {leave && leave.ledger.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Hours</TableHead>
-                      <TableHead>Note</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leave.ledger.map((l, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{fmtDay(l.date)}</TableCell>
-                        <TableCell>{l.leave_type}</TableCell>
-                        <TableCell>
-                          {Number(l.hours) < 0 ? (
-                            <span className="font-medium text-red-600 dark:text-red-400">{Number(l.hours)} hrs</span>
-                          ) : (
-                            <span className="font-medium text-emerald-600 dark:text-emerald-400">+{Number(l.hours)} hrs</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{l.note ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-              <Button type="button" variant="outline" className="w-full" onClick={closeProfile}>
-                Close
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
       )}
     </section>
   );
