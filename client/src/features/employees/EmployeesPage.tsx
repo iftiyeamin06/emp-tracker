@@ -4,7 +4,6 @@ import { fmtRange } from "../../lib/periodOptions";
 import { CashBadge, EmptyState, Notice, Skeleton } from "../../components/polish";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
@@ -55,19 +54,9 @@ const monthLabel = (ym: string): string => {
   return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
 };
 
-const shiftMonth = (ym: string, dir: 1 | -1): string => {
-  let [y, m] = ym.split("-").map(Number);
-  m += dir;
-  if (m < 1) {
-    m = 12;
-    y -= 1;
-  }
-  if (m > 12) {
-    m = 1;
-    y += 1;
-  }
-  return `${y}-${String(m).padStart(2, "0")}`;
-};
+// Compact inline select for the summary toolbar (pairs with the tab group).
+const inlineSelectClass =
+  "flex h-9 rounded-md border border-input bg-background px-3 py-1 font-mono text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const money = (rate: unknown, payType: string): string => {
   const formatted = Number(rate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -94,8 +83,9 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
   const [rowError, setRowError] = useState("");
   const [periods, setPeriods] = useState<Period[]>([]);
   const [view, setView] = useState<View>("weekly");
-  const [weekIdx, setWeekIdx] = useState(0);
-  const [monthYm, setMonthYm] = useState<string | null>(null);
+  const [yearSel, setYearSel] = useState<string | null>(null);
+  const [weekId, setWeekId] = useState<number | null>(null);
+  const [monthSel, setMonthSel] = useState<string | null>(null);
   const [summary, setSummary] = useState<Record<number, PeriodSummary>>({});
 
   const closeModal = () => {
@@ -141,32 +131,31 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
       .catch(() => undefined); // summary columns fall back to dashes
   }, []);
 
-  const yearNow = new Date().getFullYear();
-  const latestYm = periods[0]?.start_date.slice(0, 7) ?? null;
-  const effMonth = monthYm ?? latestYm;
-  const week = periods[Math.min(weekIdx, Math.max(periods.length - 1, 0))];
+  const years = [...new Set(periods.map((p) => p.start_date.slice(0, 4)))];
+  const effYear = yearSel ?? years[0] ?? null;
+  const yearPeriods = effYear ? periods.filter((p) => p.start_date.slice(0, 4) === effYear) : [];
+  const monthOptions = [...new Set(yearPeriods.map((p) => p.start_date.slice(0, 7)))];
+  const effMonth = monthSel ?? monthOptions[0] ?? null;
+  const effWeekId = weekId ?? yearPeriods[0]?.id ?? null;
+  const week = yearPeriods.find((p) => p.id === effWeekId) ?? yearPeriods[0];
+
+  const pickYear = (y: string) => {
+    setYearSel(y);
+    const yp = periods.filter((p) => p.start_date.slice(0, 4) === y);
+    setWeekId(yp[0]?.id ?? null);
+    setMonthSel(yp[0]?.start_date.slice(0, 7) ?? null);
+  };
 
   const targets: Period[] =
     view === "yearly"
-      ? periods.filter((p) => p.start_date.slice(0, 4) === String(yearNow))
+      ? yearPeriods
       : view === "monthly"
         ? effMonth
-          ? periods.filter((p) => p.start_date.slice(0, 7) === effMonth)
+          ? yearPeriods.filter((p) => p.start_date.slice(0, 7) === effMonth)
           : []
         : week
           ? [week]
           : [];
-
-  const rangeLabel =
-    view === "yearly"
-      ? `${yearNow} YTD`
-      : view === "monthly"
-        ? effMonth
-          ? monthLabel(effMonth)
-          : "No pay periods"
-        : week
-          ? fmtRange(week.start_date, week.end_date)
-          : "No pay periods";
 
   // Per-employee totals over the selected window. Gross = wages + bonus
   // (hourly: reg x rate + OT x 1.5 x rate; salary: weekly rate).
@@ -224,7 +213,7 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, periods, rows, weekIdx, monthYm]);
+  }, [view, periods, rows, yearSel, weekId, monthSel]);
 
   const today = (): string => {
     const d = new Date();
@@ -405,42 +394,53 @@ export default function EmployeesPage({ readOnly = false }: { readOnly?: boolean
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+              Year{" "}
+              <select
+                aria-label="Summary year"
+                value={effYear ?? ""}
+                onChange={(e) => pickYear(e.target.value)}
+                disabled={years.length === 0}
+                className={inlineSelectClass}
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </label>
             {view === "weekly" && (
-              <>
-                <Button
-                  type="button"
-                  aria-label="Previous period"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setWeekIdx((i) => Math.min(i + 1, Math.max(periods.length - 1, 0)))}
-                  disabled={periods.length === 0 || weekIdx >= periods.length - 1}
+              <label className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+                Week{" "}
+                <select
+                  aria-label="Summary week"
+                  value={effWeekId ?? ""}
+                  onChange={(e) => setWeekId(Number(e.target.value))}
+                  disabled={yearPeriods.length === 0}
+                  className={inlineSelectClass}
                 >
-                  <ChevronLeft />
-                </Button>
-                <Button
-                  type="button"
-                  aria-label="Next period"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setWeekIdx((i) => Math.max(i - 1, 0))}
-                  disabled={weekIdx <= 0}
-                >
-                  <ChevronRight />
-                </Button>
-              </>
+                  {yearPeriods.map((p) => (
+                    <option key={p.id} value={p.id}>{fmtRange(p.start_date, p.end_date)}</option>
+                  ))}
+                </select>
+              </label>
             )}
             {view === "monthly" && (
-              <>
-                <Button type="button" aria-label="Previous month" variant="ghost" size="icon" onClick={() => setMonthYm(shiftMonth(effMonth ?? latestYm ?? `${yearNow}-01`, -1))}>
-                  <ChevronLeft />
-                </Button>
-                <Button type="button" aria-label="Next month" variant="ghost" size="icon" onClick={() => setMonthYm(shiftMonth(effMonth ?? latestYm ?? `${yearNow}-01`, 1))}>
-                  <ChevronRight />
-                </Button>
-              </>
+              <label className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+                Month{" "}
+                <select
+                  aria-label="Summary month"
+                  value={effMonth ?? ""}
+                  onChange={(e) => setMonthSel(e.target.value)}
+                  disabled={monthOptions.length === 0}
+                  className={inlineSelectClass}
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m} value={m}>{monthLabel(m)}</option>
+                  ))}
+                </select>
+              </label>
             )}
-            <span className="font-mono text-sm text-slate-700 dark:text-slate-300">{rangeLabel}</span>
           </div>
         </div>
       )}

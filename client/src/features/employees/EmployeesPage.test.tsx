@@ -169,11 +169,12 @@ describe("EmployeesPage", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("segmented switcher aggregates hour breakdowns across views", async () => {
+  it("year/week/month dropdowns filter the summary totals", async () => {
     const periods = [
       { id: 10, start_date: "2026-10-12", end_date: "2026-10-18" },
       { id: 9, start_date: "2026-10-05", end_date: "2026-10-11" },
       { id: 8, start_date: "2026-09-28", end_date: "2026-10-04" },
+      { id: 7, start_date: "2025-10-06", end_date: "2025-10-12" },
     ];
     const grid = (c: { reg: number; ot: number; hol: number; sick: number; vac: number; days?: { day_type: string; hours: string }[] }) => ({
       period: { id: 9, status: "OPEN" },
@@ -188,31 +189,33 @@ describe("EmployeesPage", () => {
       if (url.includes("/api/timecards/10")) return ok({ data: grid({ reg: 20, ot: 0, hol: 0, sick: 0, vac: 0, days: [{ day_type: "HW8", hours: "8.00" }] }) });
       if (url.includes("/api/timecards/9")) return ok({ data: grid({ reg: 40, ot: 5, hol: 8, sick: 4, vac: 2 }) });
       if (url.includes("/api/timecards/8")) return ok({ data: grid({ reg: 32, ot: 0, hol: 0, sick: 0, vac: 0 }) });
+      if (url.includes("/api/timecards/7")) return ok({ data: grid({ reg: 10, ot: 0, hol: 0, sick: 0, vac: 0 }) });
       return ok(list());
     });
     render(<EmployeesPage />);
     await screen.findByText("Amy Example");
-    for (const h of ["Sick Hrs", "Vacation Hrs", "Holiday Hrs", "HW Hrs"]) {
-      expect(screen.getByText(h)).toBeTruthy();
-    }
-    // weekly defaults to the latest period (HW8 day only)
+    const yearSelect = screen.getByLabelText("Summary year") as HTMLSelectElement;
+    expect([...yearSelect.options].map((o) => o.value)).toEqual(["2026", "2025"]);
+    // weekly defaults to the latest 2026 week (HW8 day only)
     expect(await screen.findByText("20 hrs")).toBeTruthy();
     expect(screen.getByText("8 hrs")).toBeTruthy(); // HW
-    expect(screen.getByText("Oct 12 – Oct 18, 2026")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Previous period" }));
-    expect(await screen.findByText("45 hrs")).toBeTruthy(); // stepped to Oct 05–11
+    fireEvent.change(screen.getByLabelText("Summary week"), { target: { value: "9" } });
+    expect(await screen.findByText("45 hrs")).toBeTruthy();
     expect(screen.getByText("5 hrs")).toBeTruthy(); // amber OT badge
-    expect(screen.getByText("4 hrs")).toBeTruthy(); // sick
-    expect(screen.getByText("2 hrs")).toBeTruthy(); // vacation
-    expect(screen.getByText("Oct 05 – Oct 11, 2026")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
-    // October: 20 + 45 worked, 8 HW, 8 hol
+    // October 2026: 20 + 45 worked, 8 HW, 8 hol
     expect(await screen.findByText("65 hrs")).toBeTruthy();
-    expect(screen.getAllByText("8 hrs")).toHaveLength(2); // holiday 8 + HW 8
-    expect(screen.getByText("October 2026")).toBeTruthy();
+    expect(screen.getAllByText("8 hrs")).toHaveLength(2);
+    const monthSelect = screen.getByLabelText("Summary month") as HTMLSelectElement;
+    expect([...monthSelect.options].map((o) => o.value)).toEqual(["2026-10", "2026-09"]);
+    fireEvent.change(monthSelect, { target: { value: "2026-09" } });
+    expect(await screen.findByText("32 hrs")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Yearly (YTD)" }));
-    // 2026: + 32 worked
+    // 2026: 20 + 45 + 32 = 97; week/month dropdowns hidden
     expect(await screen.findByText("97 hrs")).toBeTruthy();
-    expect(screen.getByText("2026 YTD")).toBeTruthy();
+    expect(screen.queryByLabelText("Summary week")).toBeNull();
+    expect(screen.queryByLabelText("Summary month")).toBeNull();
+    fireEvent.change(yearSelect, { target: { value: "2025" } });
+    expect(await screen.findByText("10 hrs")).toBeTruthy();
   });
 });
