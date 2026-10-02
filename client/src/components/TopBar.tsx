@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Moon, Sun } from "lucide-react";
 import { post } from "../api/client";
 import type { SessionUser } from "../features/auth/LoginPage";
@@ -6,12 +7,42 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
-const NAV: { hash: string; label: string; roles: SessionUser["role"][] }[] = [
+const NAV: { hash: string; label: string; roles: SessionUser["role"][]; children?: { hash: string; label: string }[] }[] = [
   { hash: "#/timecards", label: "Timecards", roles: ["ADMIN"] },
   { hash: "#/employees", label: "Employees", roles: ["ADMIN", "OWNER"] },
   { hash: "#/sick", label: "Sick Hours", roles: ["ADMIN", "OWNER"] },
-  { hash: "#/report", label: "Report", roles: ["OWNER"] },
+  { hash: "#/audit", label: "Audit Trail", roles: ["OWNER"] },
+  {
+    hash: "#/report",
+    label: "Report",
+    roles: ["OWNER"],
+    children: [
+      { hash: "#/report/weekly", label: "Weekly Report" },
+      { hash: "#/report/monthly", label: "Monthly Report" },
+    ],
+  },
 ];
+
+function NavLink({ hash, label, active, sub = false }: { hash: string; label: string; active: boolean; sub?: boolean }) {
+  return (
+    <Button
+      asChild
+      variant={active ? "secondary" : "ghost"}
+      className={cn(
+        "relative w-full justify-start",
+        sub && "pl-8 text-sm font-normal",
+        active && "bg-accent font-semibold text-accent-foreground"
+      )}
+    >
+      <a href={hash}>
+        {active && (
+          <span aria-hidden className="absolute inset-y-1 left-0 w-1 rounded-full bg-primary" />
+        )}
+        {label}
+      </a>
+    </Button>
+  );
+}
 
 export function Sidebar({ role, route }: { role: SessionUser["role"]; route: string }) {
   return (
@@ -21,27 +52,14 @@ export function Sidebar({ role, route }: { role: SessionUser["role"]; route: str
         <span className="text-base font-medium">Tracker</span>
       </div>
       <nav className="flex flex-col gap-1">
-        {NAV.filter((n) => n.roles.includes(role)).map((n) => {
-          const active = route === n.hash;
-          return (
-            <Button
-              key={n.hash}
-              asChild
-              variant={active ? "secondary" : "ghost"}
-              className={cn(
-                "relative w-full justify-start",
-                active && "bg-accent font-semibold text-accent-foreground"
-              )}
-            >
-              <a href={n.hash}>
-                {active && (
-                  <span aria-hidden className="absolute inset-y-1 left-0 w-1 rounded-full bg-primary" />
-                )}
-                {n.label}
-              </a>
-            </Button>
-          );
-        })}
+        {NAV.filter((n) => n.roles.includes(role)).map((n) => (
+          <Fragment key={n.hash}>
+            <NavLink hash={n.hash} label={n.label} active={route === n.hash} />
+            {n.children?.map((c) => (
+              <NavLink key={c.hash} hash={c.hash} label={c.label} active={route === c.hash} sub />
+            ))}
+          </Fragment>
+        ))}
       </nav>
     </aside>
   );

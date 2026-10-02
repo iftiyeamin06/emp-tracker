@@ -4,18 +4,22 @@ import { Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
 import ReportPage from "./features/report/ReportPage";
 import SickHoursPage from "./features/leave/SickHoursPage";
+import AuditTrailPage from "./features/audit/AuditTrailPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import EmployeesPage from "./features/employees/EmployeesPage";
 import { Sidebar, TopBar } from "./components/TopBar";
 import "./theme.css";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
-const KNOWN = ["#/login", "#/report", "#/timecards", "#/employees", "#/sick", "#/"];
+const KNOWN = ["#/login", "#/report", "#/report/weekly", "#/report/monthly", "#/timecards", "#/employees", "#/sick", "#/audit", "#/"];
 const TITLES: Record<string, string> = {
   "#/report": "Reports",
+  "#/report/weekly": "Weekly Report",
+  "#/report/monthly": "Monthly Report",
   "#/timecards": "Timecards",
   "#/employees": "Employees",
   "#/sick": "Sick Hours",
+  "#/audit": "Audit Trail",
 };
 
 function useHashRoute(): string {
@@ -85,8 +89,18 @@ export default function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
         <main className="p-6">
-          {route === "#/report" && (me.role === "OWNER" ? <ReportPage /> : <p>Access denied.</p>)}
+          {(route === "#/report" || route === "#/report/weekly" || route === "#/report/monthly") &&
+            (me.role === "OWNER" ? (
+              <ReportPage
+                key={route}
+                initialMode={route === "#/report/monthly" ? "monthly" : "weekly"}
+                lockMode={route !== "#/report"}
+              />
+            ) : (
+              <p>Access denied.</p>
+            ))}
           {route === "#/sick" && <SickHoursPage />}
+          {route === "#/audit" && (me.role === "OWNER" ? <AuditTrailPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
           {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : me.role === "OWNER" ? <EmployeesPage readOnly /> : <p>Access denied.</p>)}
         </main>

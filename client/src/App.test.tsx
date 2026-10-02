@@ -63,6 +63,24 @@ describe("App routing", () => {
     expect(await screen.findByText("Amy Example")).toBeTruthy();
   });
 
+  it("report sub-links open weekly and monthly modes (owner only)", async () => {
+    mockApi({ email: "o@x.com", role: "OWNER" });
+    window.location.hash = "#/report/monthly";
+    const { unmount } = render(<App />);
+    expect(await screen.findByLabelText("Month")).toBeTruthy(); // monthly mode from hash
+    expect(screen.queryByRole("button", { name: "Weekly" })).toBeNull(); // locked: no mode toggle
+    expect(screen.getByText("Weekly Report", { selector: "nav a" })).toBeTruthy();
+    expect(screen.getByText("Monthly Report", { selector: "nav a" })).toBeTruthy();
+    unmount();
+    cleanup();
+    mockApi({ email: "a@x.com", role: "ADMIN" });
+    window.location.hash = "#/timecards";
+    render(<App />);
+    await screen.findByText("Timecards", { selector: "nav a" });
+    expect(screen.queryByText("Weekly Report", { selector: "nav a" })).toBeNull();
+    expect(screen.queryByText("Monthly Report", { selector: "nav a" })).toBeNull();
+  });
+
   it("logout clears the session and redirects to #/login", async () => {
     const calls: string[] = [];
     (fetch as any).mockImplementation((url: string, init?: RequestInit) => {

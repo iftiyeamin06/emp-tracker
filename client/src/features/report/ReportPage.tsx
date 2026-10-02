@@ -307,8 +307,8 @@ function KpiCards({ rows }: { rows: TableRow[] }) {
   );
 }
 
-export default function ReportPage() {
-  const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
+export default function ReportPage({ initialMode = "weekly", lockMode = false }: { initialMode?: "weekly" | "monthly"; lockMode?: boolean }) {
+  const [mode, setMode] = useState<"weekly" | "monthly">(initialMode);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [periodId, setPeriodId] = useState<number | null>(null);
   const [rows, setRows] = useState<GridRow[]>([]);
@@ -499,10 +499,12 @@ export default function ReportPage() {
       <Card className="p-4">
         <h2 className="mb-3 text-lg font-semibold tracking-tight">{mode === "weekly" ? "Weekly report" : "Monthly report"}</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {!lockMode && (
           <div role="group" aria-label="Report range" className="flex gap-1">
             <Button variant="outline" size="sm" onClick={() => setMode("weekly")} disabled={mode === "weekly"}>Weekly</Button>
             <Button variant="outline" size="sm" onClick={() => setMode("monthly")} disabled={mode === "monthly"}>Monthly</Button>
           </div>
+          )}
           {mode === "weekly" ? (
             <>
               <label className="flex items-center gap-1.5 text-sm">
