@@ -314,6 +314,7 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
   const [rows, setRows] = useState<GridRow[]>([]);
   const [mrows, setMrows] = useState<TableRow[]>([]);
   const [month, setMonth] = useState("");
+  const [monthYear, setMonthYear] = useState<string | null>(null);
   const [status, setStatus] = useState<Period["status"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -487,6 +488,17 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
   const displayRows: TableRow[] = mode === "weekly" ? weeklyRows : mrows;
   const showKpis = !loading && !error && displayRows.length > 0;
 
+  // Monthly year filter: months present in the loaded periods, newest first.
+  const monthOptions = [...new Set(periods.map((p) => fmtDate(p.start_date).slice(0, 7)))];
+  const monthYears = [...new Set(monthOptions.map((m) => m.slice(0, 4)))];
+  const effMonthYear = monthYear ?? monthOptions[0]?.slice(0, 4) ?? null;
+  const visibleMonths = effMonthYear ? monthOptions.filter((m) => m.startsWith(effMonthYear)) : monthOptions;
+  const pickMonthYear = (y: string) => {
+    setMonthYear(y);
+    const first = monthOptions.find((m) => m.startsWith(y));
+    if (first) setMonth(first);
+  };
+
   const step = (dir: 1 | -1) => {
     const idx = visiblePeriods.findIndex((p) => p.id === periodId);
     const next = visiblePeriods[idx + dir]; // list is newest-first: +1 = older week, -1 = newer
@@ -565,22 +577,38 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
               </label>{" "}
             </>
           ) : (
-            <label className="flex items-center gap-1.5 text-sm">
-              Month{" "}
-              <select
-                aria-label="Month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                disabled={periods.length === 0}
-                className={selectClass}
-              >
-                {[...new Set(periods.map((p) => fmtDate(p.start_date).slice(0, 7)))].map((m) => (
-                  <option key={m} value={m}>
-                    {monthLabel(m)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <label className="flex items-center gap-1.5 text-sm">
+                Year{" "}
+                <select
+                  aria-label="Year"
+                  value={effMonthYear ?? ""}
+                  onChange={(e) => pickMonthYear(e.target.value)}
+                  disabled={monthYears.length === 0}
+                  className={selectClass}
+                >
+                  {monthYears.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5 text-sm">
+                Month{" "}
+                <select
+                  aria-label="Month"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  disabled={periods.length === 0}
+                  className={selectClass}
+                >
+                  {visibleMonths.map((m) => (
+                    <option key={m} value={m}>
+                      {monthLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
           )}
           {mode === "weekly" && (
             <>

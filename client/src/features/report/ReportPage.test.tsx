@@ -177,6 +177,27 @@ describe("ReportPage", () => {
     expect(screen.getByText("$120.00")).toBeTruthy(); // 100 + 20
   });
 
+  it("monthly year filter narrows the month selector", async () => {
+    (fetch as any).mockImplementation((url: string) => {
+      if (url.includes("/api/reports/monthly")) {
+        return ok({ data: { month: "2026-10", rows: [] } });
+      }
+      return ok({ data: [
+        { id: 7, start_date: "2026-10-05", end_date: "2026-10-11", status: "SUBMITTED" },
+        { id: 6, start_date: "2025-10-06", end_date: "2025-10-12", status: "APPROVED" },
+      ] });
+    });
+    render(<ReportPage />);
+    fireEvent.click(await screen.findByText("Monthly"));
+    const yearSelect = await screen.findByLabelText("Year") as HTMLSelectElement;
+    expect([...yearSelect.options].map((o) => o.value)).toEqual(["2026", "2025"]);
+    const monthSelect = screen.getByLabelText("Month") as HTMLSelectElement;
+    expect([...monthSelect.options].map((o) => o.value)).toEqual(["2026-10"]); // latest year pre-selected
+    fireEvent.change(yearSelect, { target: { value: "2025" } });
+    expect([...monthSelect.options].map((o) => o.value)).toEqual(["2025-10"]);
+    expect(monthSelect.value).toBe("2025-10");
+  });
+
   it("mode persists after settling: Monthly stays monthly, Weekly returns", async () => {
     (fetch as any).mockImplementation((url: string) =>
       url.includes("/api/pay-periods")
