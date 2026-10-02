@@ -49,7 +49,7 @@ export function Sidebar({ role, route }: { role: SessionUser["role"]; route: str
     <aside className="flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-card p-4">
       <div className="flex items-center gap-2.5 px-2 pb-4 pt-2">
         <Logo size={32} />
-        <span className="text-base font-medium">Tracker</span>
+        <span className="text-base font-medium">HourBook</span>
       </div>
       <nav className="flex flex-col gap-1">
         {NAV.filter((n) => n.roles.includes(role)).map((n) => (

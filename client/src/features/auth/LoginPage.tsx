@@ -31,7 +31,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (u: SessionUser) =
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
           <Logo size={56} />
-          <CardTitle className="mt-3 text-xl">Employee Tracker</CardTitle>
+          <CardTitle className="mt-3 text-xl">HourBook</CardTitle>
           <CardDescription>Sign in to continue</CardDescription>
         </CardHeader>
         <CardContent>

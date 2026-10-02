@@ -24,7 +24,7 @@ export function CashBadge() {
 export function Logo({ size = 40 }: { size?: number }) {
   return (
     <span
-      aria-label="Employee Tracker logo"
+      aria-label="HourBook logo"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -40,7 +40,7 @@ export function Logo({ size = 40 }: { size?: number }) {
         userSelect: "none",
       }}
     >
-      ET
+      HB
     </span>
   );
 }

@@ -87,7 +87,7 @@ export default function App() {
     <div className="flex min-h-screen bg-muted/40">
       <Sidebar role={me.role} route={route} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title={TITLES[route] ?? "Employee Tracker"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
+        <TopBar title={TITLES[route] ?? "HourBook"} me={me} onLogout={logout} darkMode={darkMode} onToggleTheme={() => setDarkMode((dark) => !dark)} />
         <main className="p-6">
           {(route === "#/report" || route === "#/report/weekly" || route === "#/report/monthly") &&
             (me.role === "OWNER" ? (
