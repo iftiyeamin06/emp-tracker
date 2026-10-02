@@ -16,7 +16,6 @@ const NAV: { hash: string; label: string; roles: SessionUser["role"][]; children
     roles: ["ADMIN", "OWNER"],
   },
   { hash: "#/sick/holidays", label: "Holidays", roles: ["ADMIN", "OWNER"] },
-  { hash: "#/audit", label: "Audit Trail", roles: ["OWNER"] },
   {
     hash: "#/report",
     label: "Report",
@@ -26,6 +25,7 @@ const NAV: { hash: string; label: string; roles: SessionUser["role"][]; children
       { hash: "#/report/monthly", label: "Monthly Report" },
     ],
   },
+  { hash: "#/audit", label: "Audit Trail", roles: ["OWNER"] },
 ];
 
 function NavLink({ hash, label, active, sub = false }: { hash: string; label: string; active: boolean; sub?: boolean }) {

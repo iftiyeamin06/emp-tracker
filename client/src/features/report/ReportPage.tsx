@@ -346,7 +346,10 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
       .then((j) => {
         setPeriods(j.data);
         const months = [...new Set(j.data.map((p) => fmtDate(p.start_date).slice(0, 7)))];
-        const latest = months[0] ?? currentMonth(); // periods arrive newest-first
+        // Prefer the current month when present; newest data (even future
+        // years) must not hijack the default view.
+        const nowYm = fmtDate(new Date()).slice(0, 7);
+        const latest = months.includes(nowYm) ? nowYm : months[0] ?? currentMonth(); // periods arrive newest-first
         setMonth((cur) => cur || latest);
         setLoading(false);
       })
@@ -497,7 +500,8 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
   // Monthly year filter: months present in the loaded periods, newest first.
   const monthOptions = [...new Set(periods.map((p) => fmtDate(p.start_date).slice(0, 7)))];
   const monthYears = [...new Set(monthOptions.map((m) => m.slice(0, 4)))];
-  const effMonthYear = monthYear ?? monthOptions[0]?.slice(0, 4) ?? null;
+  const thisYear = todayYmd.slice(0, 4);
+  const effMonthYear = monthYear ?? (monthYears.includes(thisYear) ? thisYear : monthYears[0] ?? null);
   const visibleMonths = effMonthYear ? monthOptions.filter((m) => m.startsWith(effMonthYear)) : monthOptions;
   const pickMonthYear = (y: string) => {
     setMonthYear(y);
