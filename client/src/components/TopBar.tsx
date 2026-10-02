@@ -10,7 +10,12 @@ import { cn } from "../lib/utils";
 const NAV: { hash: string; label: string; roles: SessionUser["role"][]; children?: { hash: string; label: string }[] }[] = [
   { hash: "#/timecards", label: "Timecards", roles: ["ADMIN"] },
   { hash: "#/employees", label: "Employees", roles: ["ADMIN", "OWNER"] },
-  { hash: "#/sick", label: "Sick Hours", roles: ["ADMIN", "OWNER"] },
+  {
+    hash: "#/sick",
+    label: "Sick Hours",
+    roles: ["ADMIN", "OWNER"],
+  },
+  { hash: "#/sick/holidays", label: "Holidays", roles: ["ADMIN", "OWNER"] },
   { hash: "#/audit", label: "Audit Trail", roles: ["OWNER"] },
   {
     hash: "#/report",

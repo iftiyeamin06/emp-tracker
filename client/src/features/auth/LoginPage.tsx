@@ -27,7 +27,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (u: SessionUser) =
   };
 
   return (
-    <div className="-m-6 flex min-h-screen items-center justify-center bg-muted/40 p-6">
+    <div className="-m-4 flex min-h-[100dvh] items-center justify-center bg-muted/40 p-6 md:-m-6">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
           <Logo size={56} />

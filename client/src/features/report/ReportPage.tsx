@@ -363,7 +363,13 @@ export default function ReportPage({ initialMode = "weekly", lockMode = false }:
       return;
     }
     if (!visiblePeriods.some((p) => p.id === periodId)) {
-      const pref = visiblePeriods.find((p) => p.status === "OPEN") ?? visiblePeriods[0] ?? null;
+      // Owner lands ready to act: newest SUBMITTED, then APPROVED, then OPEN.
+      const pref =
+        visiblePeriods.find((p) => p.status === "SUBMITTED") ??
+        visiblePeriods.find((p) => p.status === "APPROVED") ??
+        visiblePeriods.find((p) => p.status === "OPEN") ??
+        visiblePeriods[0] ??
+        null;
       setPeriodId(pref ? pref.id : null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -198,6 +198,34 @@ describe("ReportPage", () => {
     expect(monthSelect.value).toBe("2025-10");
   });
 
+  it("owner defaults to newest SUBMITTED, then APPROVED, then OPEN", async () => {
+    const seen: string[] = [];
+    const two = [
+      { id: 1, start_date: "2026-10-12", end_date: "2026-10-18", status: "OPEN" },
+      { id: 2, start_date: "2026-10-05", end_date: "2026-10-11", status: "SUBMITTED" },
+    ];
+    (fetch as any).mockImplementation((url: string) => {
+      seen.push(url);
+      if (url.includes("/api/pay-periods")) return ok({ data: two });
+      return ok({ data: { period: { id: 2, status: "SUBMITTED" }, rows: [] } });
+    });
+    const { unmount } = render(<ReportPage />);
+    await screen.findByText("No employees in this period");
+    expect(seen).toContain("/api/timecards/2");
+    expect(seen.filter((u) => u.includes("/api/timecards/1")).length).toBe(0);
+    expect(screen.getByText("🔵 SUBMITTED (Pending CEO Approval)")).toBeTruthy();
+    unmount();
+    cleanup();
+    (fetch as any).mockImplementation((url: string) =>
+      url.includes("/api/pay-periods")
+        ? ok({ data: [{ id: 1, start_date: "2026-10-12", end_date: "2026-10-18", status: "OPEN" }] })
+        : ok({ data: { period: { id: 1, status: "OPEN" }, rows: [] } })
+    );
+    render(<ReportPage />);
+    await screen.findByText("No employees in this period");
+    expect(screen.getByText("🟡 OPEN (Awaiting Submission)")).toBeTruthy();
+  });
+
   it("mode persists after settling: Monthly stays monthly, Weekly returns", async () => {
     (fetch as any).mockImplementation((url: string) =>
       url.includes("/api/pay-periods")

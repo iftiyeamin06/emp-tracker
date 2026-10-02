@@ -4,6 +4,7 @@ import { Skeleton } from "./components/polish";
 import LoginPage, { type SessionUser } from "./features/auth/LoginPage";
 import ReportPage from "./features/report/ReportPage";
 import SickHoursPage from "./features/leave/SickHoursPage";
+import HolidaysPage from "./features/leave/HolidaysPage";
 import AuditTrailPage from "./features/audit/AuditTrailPage";
 import TimecardPage from "./features/timecards/TimecardPage";
 import EmployeesPage from "./features/employees/EmployeesPage";
@@ -11,7 +12,7 @@ import { Sidebar, TopBar, MobileDrawer } from "./components/TopBar";
 import "./theme.css";
 
 const HOME: Record<SessionUser["role"], string> = { OWNER: "#/report", ADMIN: "#/timecards" };
-const KNOWN = ["#/login", "#/report", "#/report/weekly", "#/report/monthly", "#/timecards", "#/employees", "#/sick", "#/audit", "#/"];
+const KNOWN = ["#/login", "#/report", "#/report/weekly", "#/report/monthly", "#/timecards", "#/employees", "#/sick", "#/sick/holidays", "#/audit", "#/"];
 const TITLES: Record<string, string> = {
   "#/report": "Reports",
   "#/report/weekly": "Weekly Report",
@@ -19,6 +20,7 @@ const TITLES: Record<string, string> = {
   "#/timecards": "Timecards",
   "#/employees": "Employees",
   "#/sick": "Sick Hours",
+  "#/sick/holidays": "Holidays",
   "#/audit": "Audit Trail",
 };
 
@@ -106,6 +108,7 @@ export default function App() {
               <p>Access denied.</p>
             ))}
           {route === "#/sick" && <SickHoursPage />}
+          {route === "#/sick/holidays" && <HolidaysPage />}
           {route === "#/audit" && (me.role === "OWNER" ? <AuditTrailPage /> : <p>Access denied.</p>)}
           {route === "#/timecards" && (me.role === "ADMIN" ? <TimecardPage /> : <p>Access denied.</p>)}
           {route === "#/employees" && (me.role === "ADMIN" ? <EmployeesPage /> : me.role === "OWNER" ? <EmployeesPage readOnly /> : <p>Access denied.</p>)}
